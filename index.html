@@ -64,6 +64,11 @@
         <label>Date</label><input type="date" id="currentDate">
       </div>
       
+      <button onclick="submitDashboardSleep()" style="margin-top:10px;background:#4caf50;color:#fff;width:100%;padding:10px;">
+        ✓ Submit Bedtime/Wake Time for This Date
+      </button>
+      <div id="sleepSubmitStatus" style="font-size:14px;margin-top:6px;color:#4caf50;"></div>
+      
       <div class="view-tabs">
         <button class="active" onclick="setView('routine')">📋 Routine</button>
         <button onclick="setView('tracking')">📊 Tracking</button>
@@ -112,7 +117,7 @@ const VERSES = [
 
 const ROUTINE = {
   wakeup: { name: 'Check belt notches', duration: 1, trackable: false, scheduled: true },
-  hydrate: { name: 'Hydrate + iced coffee', duration: 2, trackable: false, scheduled: true },
+  hydrate: { name: 'Hydrate + iced coffee + take pills', duration: 2, trackable: false, scheduled: true },
   cash: { name: 'Greet Cash', duration: 2, trackable: false, scheduled: true },
   verse: { name: 'Verse card', duration: 2, trackable: true, scheduled: true },
   housework: { name: 'Quick housework win', duration: 4, trackable: false, scheduled: true },
@@ -124,7 +129,7 @@ const ROUTINE = {
   mindTraining: { name: 'Mind Training app (10 min)', duration: 10, trackable: true, scheduled: true },
   groomingSkincare: { name: 'Grooming/Skincare', duration: 10, trackable: true, scheduled: true },
   breakfast: { name: 'Breakfast prep', duration: 5, trackable: false, scheduled: true },
-  eat: { name: 'Breakfast + hydrate', duration: 5, trackable: true, scheduled: true },
+  eat: { name: 'Breakfast + hydrate + Give Cash supplements', duration: 5, trackable: true, scheduled: true },
   workout: { name: '15 min workout', duration: 15, trackable: true, scheduled: true },
   cashWalk: { name: '10 min walking Cash/steps', duration: 10, trackable: true, scheduled: true },
   workStart: { name: 'Begin work', duration: 5, trackable: false, scheduled: true },
@@ -161,7 +166,8 @@ let state = {
     B: { 'Overhead press': 0, 'Chest press': 0, 'Row': 0, 'Rear shoulders': 0, 'Bicep curl': 0, 'Tricep ext': 0 },
     C: { 'Suitcase carry': 0, 'Lateral raises': 0, 'Rotation': 0, 'Dead bug/bird dog': 0 }
   },
-  sleepData: {}
+  sleepData: {},
+  sleepTimes: {}
 };
 
 function init() {
@@ -170,10 +176,16 @@ function init() {
   document.getElementById('bedTime').value = state.bedTime;
   loadData(today);
   render();
+  let saveTickCounter = 0;
   setInterval(() => {
     if (state.timerRunning && state.activeProject) {
       state.projectTimers[state.activeProject]++;
       render();
+      saveTickCounter++;
+      if (saveTickCounter >= 10) {
+        saveTickCounter = 0;
+        saveState();
+      }
     }
   }, 1000);
 }
@@ -204,6 +216,9 @@ function loadData(date) {
     const dayStr = dayDate.toISOString().split('T')[0];
     const sleepHours = localStorage.getItem(`sleep_${dayStr}`);
     if (sleepHours) state.sleepData[dayStr] = parseFloat(sleepHours);
+    const bed = localStorage.getItem(`sleepBed_${dayStr}`);
+    const wake = localStorage.getItem(`sleepWake_${dayStr}`);
+    if (bed || wake) state.sleepTimes[dayStr] = { bed: bed || '', wake: wake || '' };
   }
 }
 
@@ -213,9 +228,51 @@ function saveData(date) {
   localStorage.setItem(`hydration_${date}`, state.hydration);
   localStorage.setItem(`projects_${date}`, JSON.stringify(state.projectTimers));
   localStorage.setItem(`workouts_${date}`, JSON.stringify(state.workoutComponents));
-  localStorage.setItem(`sleep_${date}`, calculateSleep().toFixed(1));
   localStorage.setItem('verses', JSON.stringify(state.verses));
   localStorage.setItem('verseIndex', state.verseIndex);
+}
+
+function submitDashboardSleep() {
+  const date = document.getElementById('currentDate').value;
+  const bed = document.getElementById('bedTime').value;
+  const wake = document.getElementById('wakeTime').value;
+  const status = document.getElementById('sleepSubmitStatus');
+  if (!date || !bed || !wake) {
+    status.style.color = '#f44336';
+    status.textContent = 'Please set date, bedtime, and wake time first.';
+    return;
+  }
+  updateSleepTimes(date, bed, wake);
+  const hours = computeSleepDuration(bed, wake);
+  status.style.color = '#4caf50';
+  status.textContent = `Saved: ${hours.toFixed(1)}h sleep for ${date} (bed ${bed} → wake ${wake})`;
+}
+
+function updateSleepTimes(dayStr, bed, wake) {
+  state.sleepTimes[dayStr] = { bed, wake };
+  localStorage.setItem(`sleepBed_${dayStr}`, bed);
+  localStorage.setItem(`sleepWake_${dayStr}`, wake);
+  if (bed && wake) {
+    const hours = computeSleepDuration(bed, wake);
+    state.sleepData[dayStr] = hours;
+    localStorage.setItem(`sleep_${dayStr}`, hours.toFixed(1));
+  }
+  render();
+}
+
+function computeSleepDuration(bedStr, wakeStr) {
+  const [bh, bm] = bedStr.split(':').map(Number);
+  const [wh, wm] = wakeStr.split(':').map(Number);
+  let bedMinutes = bh * 60 + bm;
+  let wakeMinutes = wh * 60 + wm;
+  if (wakeMinutes <= bedMinutes) wakeMinutes += 24 * 60;
+  return (wakeMinutes - bedMinutes) / 60;
+}
+
+function updateSleepHours(dayStr, hours) {
+  state.sleepData[dayStr] = hours;
+  localStorage.setItem(`sleep_${dayStr}`, hours.toFixed(1));
+  render();
 }
 
 function saveState() {
@@ -284,6 +341,7 @@ function toggleTimer(project) {
     state.activeProject = project;
     state.timerRunning = true;
   }
+  saveState();
   render();
 }
 
@@ -495,6 +553,42 @@ function renderRoutine() {
   document.getElementById('routineView').classList.remove('hidden');
 }
 
+function getScheduledDoneForDate(k, dateStr) {
+  const currentDate = document.getElementById('currentDate').value;
+  if (dateStr === currentDate) return state.completed[k] ? 1 : 0;
+  const raw = localStorage.getItem(`completed_${dateStr}`);
+  if (!raw) return 0;
+  try { return JSON.parse(raw)[k] ? 1 : 0; } catch (e) { return 0; }
+}
+
+function getAnytimeDoneForDate(k, dateStr) {
+  const currentDate = document.getElementById('currentDate').value;
+  if (dateStr === currentDate) return state.anytimeCompleted[k]?.done ? 1 : 0;
+  const raw = localStorage.getItem(`anytime_${dateStr}`);
+  if (!raw) return 0;
+  try { return JSON.parse(raw)[k]?.done ? 1 : 0; } catch (e) { return 0; }
+}
+
+function getWorkoutCountForDate(type, comp, dateStr) {
+  const currentDate = document.getElementById('currentDate').value;
+  if (dateStr === currentDate) return state.workoutComponents[type][comp] || 0;
+  const raw = localStorage.getItem(`workouts_${dateStr}`);
+  if (!raw) return 0;
+  try { return JSON.parse(raw)[type]?.[comp] || 0; } catch (e) { return 0; }
+}
+
+function sumOverRange(getterFn, startDateStr, endDateStr) {
+  let total = 0;
+  const d = new Date(startDateStr);
+  const end = new Date(endDateStr);
+  while (d <= end) {
+    const dateStr = d.toISOString().split('T')[0];
+    total += getterFn(dateStr);
+    d.setDate(d.getDate() + 1);
+  }
+  return total;
+}
+
 function renderTracking() {
   const trackable = SCHEDULED_ORDER.filter(k => ROUTINE[k].trackable);
   const completed = trackable.filter(k => state.completed[k]).length;
@@ -507,6 +601,9 @@ function renderTracking() {
   const isLeap = (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
   const daysInYear = isLeap ? 366 : 365;
   const dayOfYear = Math.floor((d - new Date(year, 0, 0)) / 86400000);
+  const weekStart = getMondayOfWeek(date);
+  const monthStart = `${year}-${String(month).padStart(2, '0')}-01`;
+  const yearStart = `${year}-01-01`;
   
   let html = `
     <div class="card card-blue">
@@ -519,12 +616,12 @@ function renderTracking() {
       <h3>Hydration</h3>
       <p><label>Oz: <input type="number" value="${state.hydration}" onchange="state.hydration = Math.max(0, parseInt(this.value)); saveState(); render();" style="width:60px;padding:4px;"/> / 180 (${Math.round((state.hydration/180)*100)}%)</label></p>
       <div class="progress-bar"><div class="progress-fill" style="width:${(state.hydration/180)*100}%"></div></div>
-      <p style="font-size:11px;margin-top:10px;color:#666;">Monthly: ${Math.round((state.hydration*dayOfMonth)/(180*daysInMonth)*100)}% | Annual: ${Math.round((state.hydration*dayOfYear)/(180*daysInYear)*100)}%</p>
+      <p style="font-size:15px;margin-top:10px;color:#666;">Monthly: ${Math.round((state.hydration*dayOfMonth)/(180*daysInMonth)*100)}% | Annual: ${Math.round((state.hydration*dayOfYear)/(180*daysInYear)*100)}%</p>
     </div>
     
     <div class="card card-orange">
       <h3>Sleep (Weekly)</h3>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div style="display:grid;grid-template-columns:1fr;gap:10px;">
         ${(() => {
           const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
           const monday = getMondayOfWeek(date);
@@ -535,41 +632,60 @@ function renderTracking() {
             dayDate.setDate(dayDate.getDate() + i);
             const dayStr = dayDate.toISOString().split('T')[0];
             const sleepHours = state.sleepData[dayStr] || 0;
-            html += `<div style="background:#f0f0f0;padding:8px;border-radius:4px;"><strong>${days[i]}</strong><br><input type="number" step="0.5" value="${sleepHours}" onchange="state.sleepData['${dayStr}'] = parseFloat(this.value); saveState(); render();" style="width:50px;padding:4px;"/>h</div>`;
+            const times = state.sleepTimes[dayStr] || { bed: '', wake: '' };
+            html += `<div style="background:#f0f0f0;padding:8px;border-radius:4px;">
+              <strong>${days[i]}</strong> <span style="font-size:15px;">(${sleepHours.toFixed ? sleepHours.toFixed(1) : sleepHours}h)</span><br>
+              <label style="font-size:12px;">Bed (night before): <input type="time" value="${times.bed}" onchange="updateSleepTimes('${dayStr}', this.value, document.getElementById('wake_${dayStr}').value)" id="bed_${dayStr}" style="padding:4px;"/></label><br>
+              <label style="font-size:12px;">Wake: <input type="time" value="${times.wake}" onchange="updateSleepTimes('${dayStr}', document.getElementById('bed_${dayStr}').value, this.value)" id="wake_${dayStr}" style="padding:4px;"/></label><br>
+              <label style="font-size:12px;">Or type hours: <input type="number" step="0.5" value="${sleepHours}" onchange="updateSleepHours('${dayStr}', parseFloat(this.value))" style="width:50px;padding:4px;"/>h</label>
+            </div>`;
           }
           return html;
         })()}
       </div>
-      <p style="font-size:11px;margin-top:10px;color:#666;">Manually editable sleep tracking</p>
+      <p style="font-size:15px;margin-top:10px;color:#666;">Manually editable sleep tracking</p>
     </div>
     
     <h2>Weekly/Monthly/Annual Totals</h2>
     <div class="card">
-      <h3>Scheduled Trackables (Daily goals shown)</h3>
+      <h3>Scheduled Trackables</h3>
       ${trackable.map(k => {
         const done = state.completed[k] ? 1 : 0;
         const isDaily = ['groomingSkincare', 'eat', 'workout', 'cashWalk'].includes(k);
-        const target = isDaily ? 7 : 3;
+        const weeklyTarget = isDaily ? 7 : 3;
         const monthlyGoal = isDaily ? daysInMonth : Math.ceil(daysInMonth * 3 / 7);
         const annualGoal = isDaily ? daysInYear : 156;
-        return `<div style="font-size:12px;margin-bottom:10px;padding:8px;background:#f0f0f0;border-radius:4px;">
+        const weeklyCount = sumOverRange(dt => getScheduledDoneForDate(k, dt), weekStart, date);
+        const monthlyCount = sumOverRange(dt => getScheduledDoneForDate(k, dt), monthStart, date);
+        const annualCount = sumOverRange(dt => getScheduledDoneForDate(k, dt), yearStart, date);
+        const weeklyPct = Math.round(weeklyCount / weeklyTarget * 100);
+        const monthlyPct = Math.round(monthlyCount / monthlyGoal * 100);
+        const annualPct = Math.round(annualCount / annualGoal * 100);
+        return `<div style="font-size:16px;margin-bottom:10px;padding:8px;background:#f0f0f0;border-radius:4px;">
           <strong>${ROUTINE[k].name}</strong><br>
-          <label>Count: <input type="number" value="${done}" onchange="state.completed['${k}'] = this.value > 0; saveState(); render();" style="width:40px;padding:2px;"/></label><br>
-          Monthly: ${Math.round(done*daysInMonth/dayOfMonth)}/${monthlyGoal} (${Math.round((done*daysInMonth/dayOfMonth)/monthlyGoal*100)}%) | Annual: ${Math.round(done*daysInYear/dayOfYear)}/${annualGoal} (${Math.round((done*daysInYear/dayOfYear)/annualGoal*100)}%)
+          <label>Today: <input type="number" value="${done}" onchange="state.completed['${k}'] = this.value > 0; saveState(); render();" style="width:40px;padding:2px;"/></label><br>
+          Weekly: ${weeklyCount}/${weeklyTarget} (${weeklyPct}%) | Monthly: ${monthlyCount}/${monthlyGoal} (${monthlyPct}%) | Annual: ${annualCount}/${annualGoal} (${annualPct}%)
         </div>`;
       }).join('')}
     </div>
     
     <div class="card">
-      <h3>Anytime Trackables (Daily goals)</h3>
+      <h3>Anytime Trackables</h3>
       ${ANYTIME_ORDER.map(k => {
         const done = state.anytimeCompleted[k]?.done ? 1 : 0;
+        const weeklyTarget = 7;
         const monthlyGoal = daysInMonth;
         const annualGoal = daysInYear;
-        return `<div style="font-size:12px;margin-bottom:10px;padding:8px;background:#f0f0f0;border-radius:4px;">
+        const weeklyCount = sumOverRange(dt => getAnytimeDoneForDate(k, dt), weekStart, date);
+        const monthlyCount = sumOverRange(dt => getAnytimeDoneForDate(k, dt), monthStart, date);
+        const annualCount = sumOverRange(dt => getAnytimeDoneForDate(k, dt), yearStart, date);
+        const weeklyPct = Math.round(weeklyCount / weeklyTarget * 100);
+        const monthlyPct = Math.round(monthlyCount / monthlyGoal * 100);
+        const annualPct = Math.round(annualCount / annualGoal * 100);
+        return `<div style="font-size:16px;margin-bottom:10px;padding:8px;background:#f0f0f0;border-radius:4px;">
           <strong>${ROUTINE[k].name}</strong><br>
-          <label>Count: <input type="number" value="${done}" onchange="state.anytimeCompleted['${k}'] = {done: this.value > 0}; saveState(); render();" style="width:40px;padding:2px;"/></label><br>
-          Monthly: ${Math.round(done*daysInMonth/dayOfMonth)}/${monthlyGoal} (${Math.round((done*daysInMonth/dayOfMonth)/monthlyGoal*100)}%) | Annual: ${Math.round(done*daysInYear/dayOfYear)}/${annualGoal} (${Math.round((done*daysInYear/dayOfYear)/annualGoal*100)}%)
+          <label>Today: <input type="number" value="${done}" onchange="state.anytimeCompleted['${k}'] = {done: this.value > 0}; saveState(); render();" style="width:40px;padding:2px;"/></label><br>
+          Weekly: ${weeklyCount}/${weeklyTarget} (${weeklyPct}%) | Monthly: ${monthlyCount}/${monthlyGoal} (${monthlyPct}%) | Annual: ${annualCount}/${annualGoal} (${annualPct}%)
         </div>`;
       }).join('')}
     </div>
@@ -577,15 +693,41 @@ function renderTracking() {
     <div class="card">
       <h3>Workout Components (Weekly Goal: 6 each)</h3>
       ${['A', 'B', 'C'].map(type => {
-        return `<div style="margin-bottom:15px;"><strong>Workout ${type}</strong>
-          ${Object.entries(state.workoutComponents[type]).map(([comp, count]) => {
-            const monthlyPct = Math.round((count*daysInMonth/dayOfMonth)/26*100);
-            const annualPct = Math.round((count*daysInYear/dayOfYear)/312*100);
-            return `<div style="font-size:11px;margin-top:4px;">
-              ${comp}: <input type="number" value="${count}" onchange="state.workoutComponents['${type}']['${comp}'] = parseInt(this.value); saveState(); render();" style="width:30px;padding:2px;"/>/6 | Month: ${Math.round(count*daysInMonth/dayOfMonth)}/26 (${monthlyPct}%) | Year: ${Math.round(count*daysInYear/dayOfYear)}/312 (${annualPct}%)
-            </div>`;
-          }).join('')}
-        </div>`;
+        let rows = '';
+        Object.keys(state.workoutComponents[type]).forEach((comp, i) => {
+          const todayCount = state.workoutComponents[type][comp] || 0;
+          const weeklyCount = sumOverRange(dt => getWorkoutCountForDate(type, comp, dt), weekStart, date);
+          const monthlyCount = sumOverRange(dt => getWorkoutCountForDate(type, comp, dt), monthStart, date);
+          const annualCount = sumOverRange(dt => getWorkoutCountForDate(type, comp, dt), yearStart, date);
+          const weeklyPct = Math.round(weeklyCount / 6 * 100);
+          const monthlyPct = Math.round(monthlyCount / 26 * 100);
+          const annualPct = Math.round(annualCount / 312 * 100);
+          const rowBg = i % 2 === 0 ? '#f9f9f9' : '#ffffff';
+          rows += `
+            <tr style="background:${rowBg};">
+              <td style="padding:8px;border:1px solid #ddd;">${comp}</td>
+              <td style="text-align:center;padding:8px;border:1px solid #ddd;">
+                <input type="number" value="${todayCount}" onchange="state.workoutComponents['${type}']['${comp}'] = parseInt(this.value); saveState(); render();" style="width:40px;padding:4px;font-size:16px;"/>
+              </td>
+              <td style="text-align:center;padding:8px;border:1px solid #ddd;">${weeklyCount}/6 (${weeklyPct}%)</td>
+              <td style="text-align:center;padding:8px;border:1px solid #ddd;">${monthlyCount}/26 (${monthlyPct}%)</td>
+              <td style="text-align:center;padding:8px;border:1px solid #ddd;">${annualCount}/312 (${annualPct}%)</td>
+            </tr>`;
+        });
+        return `
+          <h4 style="font-size:17px;margin:15px 0 8px 0;">Workout ${type}</h4>
+          <table style="width:100%;border-collapse:collapse;margin-bottom:15px;font-size:16px;">
+            <thead>
+              <tr style="background:#333;color:#fff;">
+                <th style="text-align:left;padding:8px;border:1px solid #ddd;">Component</th>
+                <th style="padding:8px;border:1px solid #ddd;">Today</th>
+                <th style="padding:8px;border:1px solid #ddd;">Week</th>
+                <th style="padding:8px;border:1px solid #ddd;">Month</th>
+                <th style="padding:8px;border:1px solid #ddd;">Year</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>`;
       }).join('')}
     </div>
   `;
@@ -595,6 +737,41 @@ function renderTracking() {
   document.getElementById('projectsView').classList.add('hidden');
   document.getElementById('workoutsView').classList.add('hidden');
   document.getElementById('trackingView').classList.remove('hidden');
+}
+
+function getProjectHoursForDate(proj, dateStr) {
+  const currentDate = document.getElementById('currentDate').value;
+  if (dateStr === currentDate) {
+    return (state.projectTimers[proj] || 0) / 3600;
+  }
+  const raw = localStorage.getItem(`projects_${dateStr}`);
+  if (!raw) return 0;
+  try {
+    const data = JSON.parse(raw);
+    return (data[proj] || 0) / 3600;
+  } catch (e) {
+    return 0;
+  }
+}
+
+function sumProjectHours(proj, startDateStr, endDateStr) {
+  let total = 0;
+  const d = new Date(startDateStr);
+  const end = new Date(endDateStr);
+  while (d <= end) {
+    const dateStr = d.toISOString().split('T')[0];
+    total += getProjectHoursForDate(proj, dateStr);
+    d.setDate(d.getDate() + 1);
+  }
+  return total;
+}
+
+function clearProjectTimer(proj) {
+  if (!confirm(`Clear today's ${proj} timer back to 0? This won't affect past days already recorded.`)) return;
+  state.projectTimers[proj] = 0;
+  if (state.activeProject === proj) state.timerRunning = false;
+  saveState();
+  render();
 }
 
 function renderProjects() {
@@ -610,15 +787,18 @@ function renderProjects() {
     const displayTime = `${hours}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`;
     html += `
       <div style="background:${isActive ? '#e3f2fd' : '#f5f5f5'};border:${isActive ? '2px solid #2196f3' : '1px solid #ddd'};border-radius:8px;padding:15px;">
-        <div style="font-weight:bold;margin-bottom:10px;">${proj}</div>
-        <div style="font-size:1.1em;font-weight:bold;margin-bottom:10px;">${displayTime}</div>
-        <div style="font-size:0.85em;margin-bottom:10px;">
+        <div style="font-size:16px;font-weight:bold;margin-bottom:10px;">${proj}</div>
+        <div style="font-size:1.3em;font-weight:bold;margin-bottom:10px;">${displayTime}</div>
+        <div style="font-size:1em;margin-bottom:10px;">
           <label>H: <input type="number" value="${hours}" onchange="updateProjectTime('${proj}', parseInt(this.value), parseInt(document.getElementById('${proj}_m').value || 0), parseInt(document.getElementById('${proj}_s').value || 0))" id="${proj}_h" style="width:40px;padding:2px;"/></label>
           <label>M: <input type="number" value="${minutes}" onchange="updateProjectTime('${proj}', parseInt(document.getElementById('${proj}_h').value || 0), parseInt(this.value), parseInt(document.getElementById('${proj}_s').value || 0))" id="${proj}_m" style="width:40px;padding:2px;"/></label>
           <label>S: <input type="number" value="${seconds}" onchange="updateProjectTime('${proj}', parseInt(document.getElementById('${proj}_h').value || 0), parseInt(document.getElementById('${proj}_m').value || 0), parseInt(this.value))" id="${proj}_s" style="width:40px;padding:2px;"/></label>
         </div>
-        <button onclick="toggleTimer('${proj}')" style="background:${isActive && state.timerRunning ? '#4caf50' : '#2196f3'};color:#fff;width:100%;padding:8px;">
+        <button onclick="toggleTimer('${proj}')" style="background:${isActive && state.timerRunning ? '#4caf50' : '#2196f3'};color:#fff;width:100%;padding:8px;margin-bottom:6px;">
           ${isActive && state.timerRunning ? '⏸ Stop' : '▶ Start'}
+        </button>
+        <button onclick="clearProjectTimer('${proj}')" style="background:#eee;color:#333;width:100%;padding:6px;font-size:0.85em;">
+          Clear Today
         </button>
       </div>
     `;
@@ -626,16 +806,14 @@ function renderProjects() {
   
   html += `</div>`;
   if (state.timerRunning) {
-    html += `<button onclick="state.timerRunning=false;render()" style="background:#f44336;color:#fff;width:100%;margin-bottom:20px;">⏹ Stop All</button>`;
+    html += `<button onclick="state.timerRunning=false;saveState();render()" style="background:#f44336;color:#fff;width:100%;margin-bottom:20px;">⏹ Stop All</button>`;
   }
   
   const date = document.getElementById('currentDate').value;
   const d = new Date(date);
-  const dayOfMonth = d.getDate();
-  const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-  const isLeap = (d.getFullYear() % 4 === 0 && d.getFullYear() % 100 !== 0) || (d.getFullYear() % 400 === 0);
-  const daysInYear = isLeap ? 366 : 365;
-  const dayOfYear = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 86400000);
+  const yearStart = `${d.getFullYear()}-01-01`;
+  const monthStart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  const weekStart = getMondayOfWeek(date);
   
   const targets = { BNBS: 15, DEV: 15, CAREER: 6, IREC: 4 };
   const monthlyTargets = { BNBS: 64.5, DEV: 64.5, CAREER: 25.8, IREC: 17.2 };
@@ -645,32 +823,30 @@ function renderProjects() {
     <h3>Weekly</h3>
     <div class="card">
       ${['BNBS', 'DEV', 'CAREER', 'IREC'].map(proj => {
-        const hours = (state.projectTimers[proj] / 3600).toFixed(1);
+        const hours = sumProjectHours(proj, weekStart, date).toFixed(1);
         const target = targets[proj];
         const pct = Math.round((hours / target) * 100);
-        return `<div style="font-size:12px;margin-bottom:8px;"><strong>${proj}</strong>: ${hours}/${target}h (${pct}%)</div>`;
+        return `<div style="font-size:16px;margin-bottom:10px;"><strong>${proj}</strong>: ${hours}/${target}h (${pct}%)</div>`;
       }).join('')}
     </div>
     
     <h3>Monthly</h3>
     <div class="card">
       ${['BNBS', 'DEV', 'CAREER', 'IREC'].map(proj => {
-        const daily = (state.projectTimers[proj] / 3600).toFixed(1);
-        const monthlyAchieved = (daily * daysInMonth / dayOfMonth).toFixed(1);
+        const monthlyAchieved = sumProjectHours(proj, monthStart, date).toFixed(1);
         const monthlyTarget = monthlyTargets[proj];
         const pct = Math.round((monthlyAchieved / monthlyTarget) * 100);
-        return `<div style="font-size:12px;margin-bottom:8px;"><strong>${proj}</strong>: ${monthlyAchieved}/${monthlyTarget}h (${pct}%)</div>`;
+        return `<div style="font-size:16px;margin-bottom:10px;"><strong>${proj}</strong>: ${monthlyAchieved}/${monthlyTarget}h (${pct}%)</div>`;
       }).join('')}
     </div>
     
     <h3>Annual</h3>
     <div class="card">
       ${['BNBS', 'DEV', 'CAREER', 'IREC'].map(proj => {
-        const daily = (state.projectTimers[proj] / 3600).toFixed(1);
-        const annualAchieved = (daily * daysInYear / dayOfYear).toFixed(1);
+        const annualAchieved = sumProjectHours(proj, yearStart, date).toFixed(1);
         const annualTarget = annualTargets[proj];
         const pct = Math.round((annualAchieved / annualTarget) * 100);
-        return `<div style="font-size:12px;margin-bottom:8px;"><strong>${proj}</strong>: ${annualAchieved}/${annualTarget}h (${pct}%)</div>`;
+        return `<div style="font-size:16px;margin-bottom:10px;"><strong>${proj}</strong>: ${annualAchieved}/${annualTarget}h (${pct}%)</div>`;
       }).join('')}
     </div>
   `;
@@ -684,36 +860,35 @@ function renderProjects() {
 
 function renderWorkouts() {
   let html = `<h2>Workout Components</h2>
-    <p style="margin-bottom:20px;font-size:12px;color:#666;">Track each component individually. Target: 6 reps/week per component.</p>`;
-  
-  const date = document.getElementById('currentDate').value;
-  const d = new Date(date);
-  const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-  const isLeap = (d.getFullYear() % 4 === 0 && d.getFullYear() % 100 !== 0) || (d.getFullYear() % 400 === 0);
-  const daysInYear = isLeap ? 366 : 365;
-  
-  // Aggregate monthly and annual data
-  const currentMonth = date.substring(0, 7);
-  const currentYear = date.substring(0, 4);
-  let monthlyComps = { A: { 'Hip hinge': 0, 'Squat': 0, 'Side steps': 0, 'Glute bridges': 0, 'Calf raises': 0 }, B: { 'Overhead press': 0, 'Chest press': 0, 'Row': 0, 'Rear shoulders': 0, 'Bicep curl': 0, 'Tricep ext': 0 }, C: { 'Suitcase carry': 0, 'Lateral raises': 0, 'Rotation': 0, 'Dead bug/bird dog': 0 } };
-  let annualComps = { A: { 'Hip hinge': 0, 'Squat': 0, 'Side steps': 0, 'Glute bridges': 0, 'Calf raises': 0 }, B: { 'Overhead press': 0, 'Chest press': 0, 'Row': 0, 'Rear shoulders': 0, 'Bicep curl': 0, 'Tricep ext': 0 }, C: { 'Suitcase carry': 0, 'Lateral raises': 0, 'Rotation': 0, 'Dead bug/bird dog': 0 } };
-  
-  // This would require reading all dates from storage - simplified for now
-  // User can see daily tracking here
+    <p style="margin-bottom:20px;font-size:15px;color:#666;">Track each component individually. Target: 6 reps/week per component.</p>`;
   
   html += '<h3>Daily Tracking</h3>';
   ['A', 'B', 'C'].forEach(type => {
-    html += `<h4>Workout ${type}</h4><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px;">`;
-    Object.entries(state.workoutComponents[type]).forEach(([comp, count]) => {
+    html += `
+      <h4 style="font-size:18px;margin:15px 0 8px 0;">Workout ${type}</h4>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:20px;font-size:17px;">
+        <thead>
+          <tr style="background:#333;color:#fff;">
+            <th style="text-align:left;padding:10px;border:1px solid #ddd;">Component</th>
+            <th style="text-align:center;padding:10px;border:1px solid #ddd;">Count</th>
+            <th style="text-align:center;padding:10px;border:1px solid #ddd;">+1</th>
+          </tr>
+        </thead>
+        <tbody>`;
+    Object.entries(state.workoutComponents[type]).forEach(([comp, count], i) => {
+      const rowBg = i % 2 === 0 ? '#f9f9f9' : '#ffffff';
       html += `
-        <div style="background:#f5f5f5;border:1px solid #ddd;border-radius:6px;padding:12px;">
-          <div style="font-size:13px;margin-bottom:8px;">${comp}</div>
-          <div style="font-size:18px;font-weight:bold;margin-bottom:10px;">${count}/6</div>
-          <button onclick="toggleWorkoutComponent('${type}', '${comp}')" style="background:#2196f3;color:#fff;width:100%;padding:6px;">+1</button>
-        </div>
-      `;
+          <tr style="background:${rowBg};">
+            <td style="padding:10px;border:1px solid #ddd;">${comp}</td>
+            <td style="text-align:center;padding:10px;border:1px solid #ddd;font-weight:bold;font-size:20px;">${count}/6</td>
+            <td style="text-align:center;padding:10px;border:1px solid #ddd;">
+              <button onclick="toggleWorkoutComponent('${type}', '${comp}')" style="background:#2196f3;color:#fff;padding:8px 16px;font-size:16px;">+1</button>
+            </td>
+          </tr>`;
     });
-    html += `</div>`;
+    html += `
+        </tbody>
+      </table>`;
   });
   
   document.getElementById('workoutsView').innerHTML = html;
