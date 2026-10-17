@@ -58,7 +58,7 @@
     
     <div class="settings">
       <div class="grid-2">
-        <div><label>Wake Time</label><input type="time" id="wakeTime" value="07:00"></div>
+        <div><label>Wake Time</label><input type="time" id="wakeTime" value="05:30"></div>
         <div><label>Bedtime (for sleep tracking)</label><input type="time" id="bedTime" value="22:00" onchange="state.bedTime=this.value;saveData(document.getElementById('currentDate').value);"></div>
       </div>
       
@@ -117,25 +117,48 @@ const VERSES = [
   { text: "But they that wait upon the LORD shall renew their strength; they shall mount up with wings as eagles.", reference: "Isaiah 40:31", id: 20 }
 ];
 
-const ROUTINE = {
-  wakeup: { name: 'Check belt notches', duration: 1, trackable: false, scheduled: true },
-  hydrate: { name: 'Hydrate + pills', duration: 4, trackable: false, scheduled: true },
-  cash: { name: 'Greet Cash', duration: 10, trackable: false, scheduled: true },
-  prayWithSusan: { name: 'Time with Susan (prayer)', duration: 5, trackable: true, scheduled: true },
-  breakfast: { name: 'Breakfast prep', duration: 5, trackable: false, scheduled: true },
-  eat: { name: 'Breakfast + hydrate + Cash supplements + TV', duration: 15, trackable: true, scheduled: true },
-  tubPrimer: { name: 'Tub band/stretch primer (matches A/B/C day)', duration: 5, trackable: true, scheduled: true },
-  verse: { name: 'Verse card', duration: 2, trackable: true, scheduled: true },
-  timeWithGodMed: { name: 'Time With God + Meditation (prayer + directives)', duration: 5, trackable: true, scheduled: true },
-  breathing: { name: 'Box breathing (4-4-4-4)', duration: 3, trackable: true, scheduled: true },
-  mindTraining: { name: 'Mind Training app (10 min)', duration: 10, trackable: true, scheduled: true },
-  selfMassage: { name: 'Self-massage', duration: 3, trackable: true, scheduled: true },
-  groomingSkincare: { name: 'Grooming/Skincare', duration: 2, trackable: true, scheduled: true },
-  coldWater: { name: 'Cold water face + mirror', duration: 5, trackable: false, scheduled: true },
-  cashWalk: { name: '10 min walking Cash', duration: 10, trackable: true, scheduled: true },
-  workout: { name: '30 min workout', duration: 30, trackable: true, scheduled: true },
-  workStart: { name: 'Begin work', duration: 5, trackable: false, scheduled: true },
-  
+const CHECKLIST = [
+  { time: '5:30 AM', tag: 'FIXED', items: ['Out of bed (no snoozing, even if Susan does)'] },
+  { time: '5:50 AM', tag: 'done by', items: ['CPAP numbers checked (AHI, leak, hours)', 'Last night logged', 'Dream work / reconnoitering', 'Aleve taken', 'Bright lights on', { t: 'HEAT ON round 1 (5:50 to 6:10)', heat: 'on' }] },
+  { time: '6:10 AM', tag: 'done by', items: ['Outside with coffee or water (winter: see Part J)', 'Stretching', 'Pets treated', 'Breath of fire and breathing exercises', 'Time with God (5 min)', 'Mind control (10 min max): grounding, "Why am I suffering" meditation', { t: 'HEAT OFF at 6:10 (20-minute break)', heat: 'off' }] },
+  { time: '6:30 AM', tag: 'done by', items: ['Drinks and yogurt prepped', { t: 'HEAT ON round 2 (6:30 to 6:50)', heat: 'on' }] },
+  { time: '6:50 AM', tag: 'done by', items: ['Eaten', 'Pills taken', 'Cash has his supplement', { t: 'HEAT OFF at 6:50', heat: 'off' }] },
+  { time: '7:10 AM', tag: 'STEPS: 20 minutes reserved every day', steps: true, items: ['Aerobic step with TV: 10 minutes minimum (use the rest to catch up or go longer)'] },
+  { time: '7:15 AM', tag: 'done by', items: ['Skincare done'] },
+  { time: '7:30 AM', tag: 'at the door when Susan leaves for work', items: ['See off/Pray with Susan'] },
+  { time: '8:30 AM', tag: 'done by', items: ['Exercise done (25 min, outdoors: the sun is up)'] },
+  { time: '8:45 AM', tag: 'done by', items: ['Workday started', 'Stock open checked (weekdays, 5 min)'] },
+  { time: '9:45 AM', tag: 'done by', items: ['Last full-strength coffee poured (decaf or half-strength after)'] },
+  { time: '12:30 PM', tag: 'done by', items: ['Prime work block done'] },
+  { time: '1:30 PM', tag: 'done by', items: ['Lunch eaten', 'Heat pad routine (10 min no heat, 20 min heat)', 'Check-in with God', 'Short Cash walk', 'Back at your desk'] },
+  { time: '3:00 PM', tag: 'done by', items: ['Large glass of water has been drunk'] },
+  { time: '5:30 PM', tag: 'done by', items: ['Workday done'] },
+  { time: '6:00 PM', tag: 'done by', items: ['Have made dinner', { t: 'Have microwaved heat packs for HEAT ON round 1 then sat down to eat', heat: 'on' }] },
+  { time: '6:00 PM', tag: 'done by', items: [{ t: 'HEAT OFF for 20 minutes', heat: 'off' }] },
+  { time: '6:20 PM', tag: 'done by', items: [{ t: 'HEAT ON round 2', heat: 'on' }] },
+  { time: '7:00 PM', tag: 'done by', items: ['Dinner done', 'Kitchen closed', 'Must be with Susan', 'Lamps Low'] },
+  { time: '8:00 PM', tag: 'FIXED', items: ['TV off', 'Any small snacks finished'] },
+  { time: '8:25 PM', tag: 'done by', items: ['Susan has taken her pill', 'Nightly prayer together', 'In bed with Susan, cuddle until she is asleep (no phone)', 'Set thermostat', 'Diffuser'] },
+  { time: '9:00 PM', tag: 'done by', items: ['15-minutes why am I suffering, prayer, mind training BLOCK... in bath or not', 'Teeth brushed', 'CPAP mask and hose checked', 'Tomorrow clothes set out, etc.'] },
+  { time: '9:45 PM', tag: 'done by', items: ['Any bathing + grooming + skincare', 'Last bathroom trip', 'Be in bed, mask on, lights off, audio off', { t: 'Evening practice started (reflection, slow breathing, body scan)', fixed: true }] }
+];
+
+// Build ROUTINE entries + SCHEDULED_ORDER from CHECKLIST (key = slug of the item text)
+const ROUTINE = {};
+const SCHEDULED_ORDER = [];
+CHECKLIST.forEach(block => {
+  block.items = block.items.map(it => {
+    const item = typeof it === 'string' ? { t: it } : it;
+    let key = 'c_' + item.t.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 40);
+    while (ROUTINE[key]) key += '_';
+    item.key = key;
+    ROUTINE[key] = { name: item.t, trackable: true, scheduled: true };
+    SCHEDULED_ORDER.push(key);
+    return item;
+  });
+});
+
+Object.assign(ROUTINE, {
   // Anytime activities (no scheduled times)
   cashActivity: { name: '15 min activity with Cash', trackable: true, scheduled: false },
   stretchMobility: { name: 'Stretching + Standing mobility (knees→back→arms)', trackable: true, scheduled: false },
@@ -144,9 +167,8 @@ const ROUTINE = {
   workoutC: { name: 'Workout C', trackable: true, scheduled: false, exercises: ['Suitcase carry', 'Lateral raises', 'Rotation', 'Dead bug/bird dog'] },
   cardio: { name: 'Cardio', trackable: true, scheduled: false },
   foodLog: { name: 'Log food', trackable: true, scheduled: false },
-};
+});
 
-const SCHEDULED_ORDER = ['wakeup', 'hydrate', 'cash', 'prayWithSusan', 'breakfast', 'eat', 'tubPrimer', 'verse', 'timeWithGodMed', 'breathing', 'mindTraining', 'selfMassage', 'groomingSkincare', 'coldWater', 'cashWalk', 'workout', 'workStart'];
 const ANYTIME_ORDER = ['cashActivity', 'stretchMobility', 'workoutA', 'workoutB', 'workoutC', 'cardio', 'foodLog'];
 
 let lastLoadedDate = null;
@@ -170,6 +192,7 @@ let state = {
     B: { 'Overhead press': 0, 'Chest press': 0, 'Row': 0, 'Rear shoulders': 0, 'Bicep curl': 0, 'Tricep ext': 0 },
     C: { 'Suitcase carry': 0, 'Lateral raises': 0, 'Rotation': 0, 'Dead bug/bird dog': 0 }
   },
+  stepsMinutes: 0,
   sleepData: {},
   sleepTimes: {}
 };
@@ -204,6 +227,7 @@ function loadData(date) {
   state.hydration = 0;
   state.projectTimers = { BNBS: 0, DEV: 0, CAREER: 0, IREC: 0 };
   state.activeProject = null;
+  state.stepsMinutes = 0;
   state.workoutComponents = {
     A: { 'Hip hinge': 0, 'Squat': 0, 'Side steps': 0, 'Glute bridges': 0, 'Calf raises': 0 },
     B: { 'Overhead press': 0, 'Chest press': 0, 'Row': 0, 'Rear shoulders': 0, 'Bicep curl': 0, 'Tricep ext': 0 },
@@ -215,9 +239,11 @@ function loadData(date) {
   const hydration = localStorage.getItem(`hydration_${date}`);
   const projects = localStorage.getItem(`projects_${date}`);
   const workouts = localStorage.getItem(`workouts_${date}`);
+  const steps = localStorage.getItem(`steps_${date}`);
   const verses = localStorage.getItem('verses');
   const verseIndex = localStorage.getItem('verseIndex');
   
+  if (steps) state.stepsMinutes = parseInt(steps) || 0;
   if (completed) state.completed = JSON.parse(completed);
   if (anytime) state.anytimeCompleted = JSON.parse(anytime);
   if (hydration) state.hydration = parseInt(hydration);
@@ -247,6 +273,7 @@ function saveData(date) {
   localStorage.setItem(`hydration_${date}`, state.hydration);
   localStorage.setItem(`projects_${date}`, JSON.stringify(state.projectTimers));
   localStorage.setItem(`workouts_${date}`, JSON.stringify(state.workoutComponents));
+  localStorage.setItem(`steps_${date}`, state.stepsMinutes);
   localStorage.setItem('verses', JSON.stringify(state.verses));
   localStorage.setItem('verseIndex', state.verseIndex);
 }
@@ -534,39 +561,46 @@ function renderRoutine() {
       <button class="btn-success" onclick="addVerse()" style="width:100%;margin-top:10px;">+ Add Verse</button>
     </div>
     
-    <h2>Scheduled Morning (Deadlines to finish by)</h2>
-    <!-- Updated: 2026-07-07 -->
+    <h2>Daily Checklist</h2>
   `;
   
 
   
-  const wake = document.getElementById('wakeTime').value;
-  const [wh, wm] = wake.split(':').map(Number);
-  let timeOffset = 0;
-  
-  SCHEDULED_ORDER.forEach((key, index) => {
-    const step = ROUTINE[key];
-    
-    let startMin = wh * 60 + wm + timeOffset;
-    const startH = Math.floor(startMin / 60);
-    const startM = startMin % 60;
-    const startTime = `${String(startH).padStart(2, '0')}:${String(startM).padStart(2, '0')} a.m.`;
-    
-    const done = state.completed[key];
-    
+  const allKeys = SCHEDULED_ORDER;
+  const doneCount = allKeys.filter(k => state.completed[k]).length;
+  html += `
+    <div class="card card-blue" style="position:sticky;top:0;z-index:5;">
+      <strong>${doneCount} of ${allKeys.length} done</strong>
+      <div class="progress-bar"><div class="progress-fill" style="width:${(doneCount/allKeys.length)*100}%"></div></div>
+    </div>
+  `;
+
+  CHECKLIST.forEach(block => {
+    const blockDone = block.items.filter(it => state.completed[it.key]).length;
+    const allDone = blockDone === block.items.length;
+    const fixed = block.tag === 'FIXED';
+    const tagColor = fixed ? '#c62828' : (block.steps ? '#2e7d32' : '#555');
     html += `
-      <div class="step ${done ? 'done' : ''}">
-        <div class="step-header">
-          <div>
-            <div class="step-time">${startTime} ${step.name}</div>
-          </div>
-          ${step.trackable ? `<button onclick="toggleStep('${key}')" style="background:${done ? '#4caf50' : '#f0f0f0'};color:${done ? '#fff' : '#333'};">${done ? '✓' : 'Mark'}</button>` : ''}
+      <div class="card" style="border-left:6px solid ${fixed ? '#c62828' : '#2196f3'};${allDone ? 'opacity:0.65;background:#f1f8f1;' : ''}">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;">
+          <div><strong style="font-size:17px;">${block.time}</strong> <span style="font-size:12px;font-weight:bold;color:${tagColor};text-transform:${fixed ? 'uppercase' : 'none'};">${block.tag}</span></div>
+          <span style="font-size:12px;color:#666;">${blockDone}/${block.items.length}</span>
         </div>
+        ${block.items.map(it => {
+          const done = !!state.completed[it.key];
+          const bg = done ? '#e8f5e9' : (it.heat === 'on' ? '#fff3e0' : it.heat === 'off' ? '#e3f2fd' : '#fff');
+          return `<div class="step ${done ? 'done' : ''}" style="background:${bg};margin-bottom:6px;padding:10px;">
+            <div class="step-header" style="align-items:center;gap:10px;">
+              <div style="font-size:14px;${it.heat ? 'font-weight:bold;' : ''}">${it.heat === 'on' ? '🔥 ' : it.heat === 'off' ? '❄️ ' : ''}${it.t}${it.fixed ? ' <span style="color:#c62828;font-size:11px;font-weight:bold;">FIXED</span>' : ''}</div>
+              <button onclick="toggleStep('${it.key}')" style="flex-shrink:0;background:${done ? '#4caf50' : '#f0f0f0'};color:${done ? '#fff' : '#333'};">${done ? '✓' : 'Mark'}</button>
+            </div>
+          </div>`;
+        }).join('')}
+        ${block.steps ? `<div style="margin-top:8px;"><label>Minutes done today: <input type="number" min="0" value="${state.stepsMinutes || ''}" placeholder="______" onchange="state.stepsMinutes = Math.max(0, parseInt(this.value) || 0); saveState();" style="width:90px;padding:6px;"/></label></div>` : ''}
       </div>
     `;
-    timeOffset += step.duration;
   });
-  
+
   html += `
     <h2>Hydration</h2>
     <div class="card">
@@ -688,7 +722,7 @@ function renderTracking() {
       <h3>Scheduled Trackables</h3>
       ${trackable.map(k => {
         const done = state.completed[k] ? 1 : 0;
-        const isDaily = ['groomingSkincare', 'eat', 'workout', 'cashWalk'].includes(k);
+        const isDaily = true;
         const weeklyTarget = isDaily ? 7 : 3;
         const monthlyGoal = isDaily ? daysInMonth : Math.ceil(daysInMonth * 3 / 7);
         const annualGoal = isDaily ? daysInYear : 156;
