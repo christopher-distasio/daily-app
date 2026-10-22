@@ -118,19 +118,14 @@ const VERSES = [
 ];
 
 const CHECKLIST = [
-  { time: '5:30 AM', tag: 'FIXED', items: ['Out of bed (no snoozing, even if Susan does)'] },
-  { time: '5:50 AM', tag: 'done by', items: ['CPAP numbers checked (AHI, leak, hours)', 'Last night logged', 'Dream work / reconnoitering', 'Aleve taken', 'Bright lights on', { t: 'HEAT ON round 1 (5:50 to 6:10)', heat: 'on' }] },
-  { time: '6:10 AM', tag: 'done by', items: ['Outside with coffee or water (winter: see Part J)', 'Stretching', 'Pets treated', 'Breath of fire and breathing exercises', 'Time with God (5 min)', 'Mind control (10 min max): grounding, "Why am I suffering" meditation', { t: 'HEAT OFF at 6:10 (20-minute break)', heat: 'off' }] },
-  { time: '6:30 AM', tag: 'done by', items: ['Drinks and yogurt prepped', { t: 'HEAT ON round 2 (6:30 to 6:50)', heat: 'on' }] },
-  { time: '6:50 AM', tag: 'done by', items: ['Eaten', 'Pills taken', 'Cash has his supplement', { t: 'HEAT OFF at 6:50', heat: 'off' }] },
-  { time: '7:10 AM', tag: 'STEPS: 20 minutes reserved every day', steps: true, items: ['Aerobic step with TV: 10 minutes minimum (use the rest to catch up or go longer)'] },
-  { time: '7:15 AM', tag: 'done by', items: ['Skincare done'] },
-  { time: '7:30 AM', tag: 'at the door when Susan leaves for work', items: ['See off/Pray with Susan'] },
-  { time: '8:30 AM', tag: 'done by', items: ['Exercise done (25 min, outdoors: the sun is up)'] },
-  { time: '8:45 AM', tag: 'done by', items: ['Workday started', 'Stock open checked (weekdays, 5 min)'] },
-  { time: '9:45 AM', tag: 'done by', items: ['Last full-strength coffee poured (decaf or half-strength after)'] },
-  { time: '12:30 PM', tag: 'done by', items: ['Prime work block done'] },
-  { time: '1:30 PM', tag: 'done by', items: ['Lunch eaten', 'Heat pad routine (10 min no heat, 20 min heat)', 'Check-in with God', 'Short Cash walk', 'Back at your desk'] },
+  { time: '8:00 AM', tag: 'FIXED', items: ['Out of bed (no snoozing)'] },
+  { time: '8:15 AM', tag: 'done by', items: ['CPAP numbers checked (AHI, leak, hours)', 'Last night logged', 'Dream work / reconnoitering', 'Aleve taken', 'Bright lights on', { t: 'Heat Pad Round 1 started', heat: 'on' }] },
+  { time: '8:30 AM', tag: 'done by', items: ['Outside with coffee or water', 'Stretching', 'Pets treated', 'Breath of fire and breathing exercises', 'Time with God (5 min)', 'Mind control (10 min max): grounding, "Why am I suffering" meditation', { t: 'Heat Pad off (20-minute break)', heat: 'off' }] },
+  { time: '8:50 AM', tag: 'done by', items: ['Drinks and yogurt prepped', { t: 'Heat Pad Round 2 started', heat: 'on' }] },
+  { time: '9:15 AM', tag: 'done by', items: ['Eaten', 'Pills taken', 'Cash has his supplement', { t: 'Heat Pad off', heat: 'off' }] },
+  { time: '10:30 AM', tag: 'done by', items: ['Workday started', 'Stock report/engagement/research'] },
+  { time: '12:00 PM', tag: 'done by', items: ['Last full-strength coffee poured (decaf or half-strength after)'] },
+  { time: '2:00 PM', tag: 'done by', items: ['Lunch eaten', 'Heat pad routine (10 min no heat, 20 min heat)', 'Check-in with God', 'Short Cash walk', 'Back at your desk'] },
   { time: '3:00 PM', tag: 'done by', items: ['Large glass of water has been drunk'] },
   { time: '5:30 PM', tag: 'done by', items: ['Workday done'] },
   { time: '6:00 PM', tag: 'done by', items: ['Have made dinner', { t: 'Have microwaved heat packs for HEAT ON round 1 then sat down to eat', heat: 'on' }] },
@@ -845,6 +840,21 @@ function clearProjectTimer(proj) {
   render();
 }
 
+// Work schedule: 0.5h lunch at 2:00 subtracted on full days only (none on half days)
+const WORK_SCHEDULE = {
+  0: null,
+  1: { start: '10:30', end: '5:30', hours: 6.5 },
+  2: { start: '10:30', end: '5:30', hours: 6.5 },
+  3: { start: '10:30', end: '2:30', hours: 4 },
+  4: null,
+  5: { start: '10:30', end: '5:30', hours: 6.5 },
+  6: { start: '10:30', end: '2:30', hours: 4 }
+};
+const WEEKLY_WORK_HOURS = Object.values(WORK_SCHEDULE).reduce((a, w) => a + (w ? w.hours : 0), 0);
+const PROJECT_ORDER = ['BNBS', 'DEV', 'CAREER', 'IREC'];
+// Same proportions as the old 15/15/6/4 weekly split (of 40h)
+const PROJECT_SHARE = { BNBS: 0.375, DEV: 0.375, CAREER: 0.15, IREC: 0.10 };
+
 function renderProjects() {
   let html = `<h2>Project Work Tracking</h2>
     <div class="grid-4" style="margin-bottom:20px;">`;
@@ -886,9 +896,28 @@ function renderProjects() {
   const monthStart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
   const weekStart = getMondayOfWeek(date);
   
-  const targets = { BNBS: 15, DEV: 15, CAREER: 6, IREC: 4 };
-  const monthlyTargets = { BNBS: 64.5, DEV: 64.5, CAREER: 25.8, IREC: 17.2 };
-  const annualTargets = { BNBS: 780, DEV: 780, CAREER: 312, IREC: 208 };
+  const targets = {}, monthlyTargets = {}, annualTargets = {};
+  PROJECT_ORDER.forEach(p => {
+    targets[p] = +(WEEKLY_WORK_HOURS * PROJECT_SHARE[p]).toFixed(1);
+    monthlyTargets[p] = +(WEEKLY_WORK_HOURS * PROJECT_SHARE[p] * 4.3).toFixed(1);
+    annualTargets[p] = Math.round(WEEKLY_WORK_HOURS * PROJECT_SHARE[p] * 52);
+  });
+
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const todayIdx = new Date(date + 'T12:00:00').getDay();
+  html += `
+    <h3>Work Schedule (2:00 lunch taken out on full days only)</h3>
+    <div class="card">
+      ${dayNames.map((nm, i) => {
+        const w = WORK_SCHEDULE[i];
+        const hl = i === todayIdx ? 'background:#e3f2fd;' : '';
+        if (!w) return `<div style="padding:6px;border-radius:4px;${hl}"><strong>${nm}</strong>: off</div>`;
+        const split = PROJECT_ORDER.map(p => `${p} ${(w.hours * PROJECT_SHARE[p]).toFixed(1)}`).join(' · ');
+        return `<div style="padding:6px;border-radius:4px;${hl}"><strong>${nm}</strong> ${w.start}–${w.end}: <strong>${w.hours}h</strong><br><span style="font-size:13px;color:#555;">${split}</span></div>`;
+      }).join('')}
+      <div style="margin-top:8px;font-size:14px;"><strong>Week total: ${WEEKLY_WORK_HOURS}h</strong></div>
+    </div>
+  `;
   
   html += `
     <h3>Weekly</h3>
