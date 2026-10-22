@@ -193,7 +193,7 @@ let state = {
 };
 
 function init() {
-  const today = new Date().toISOString().split('T')[0];
+  const today = toDateStr(new Date());
   document.getElementById('currentDate').value = today;
   document.getElementById('bedTime').value = state.bedTime;
   lastLoadedDate = today;
@@ -249,11 +249,11 @@ function loadData(date) {
   
   // Load all sleep data from this week
   const monday = getMondayOfWeek(date);
-  const d = new Date(monday);
+  const d = parseDate(monday);
   for (let i = 0; i < 7; i++) {
     const dayDate = new Date(d);
     dayDate.setDate(dayDate.getDate() + i);
-    const dayStr = dayDate.toISOString().split('T')[0];
+    const dayStr = toDateStr(dayDate);
     const sleepHours = localStorage.getItem(`sleep_${dayStr}`);
     if (sleepHours) state.sleepData[dayStr] = parseFloat(sleepHours);
     const bed = localStorage.getItem(`sleepBed_${dayStr}`);
@@ -335,7 +335,7 @@ function handleDateChange() {
 }
 
 function saveState() {
-  const date = document.getElementById('currentDate').value || new Date().toISOString().split('T')[0];
+  const date = document.getElementById('currentDate').value || toDateStr(new Date());
   saveData(date);
 }
 
@@ -474,11 +474,22 @@ function calculateBurndownTime(wakeTime, offsetFromEnd) {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
+// Dates are stored as local YYYY-MM-DD. toISOString() is UTC, which rolls over to
+// tomorrow in the evening, and new Date("YYYY-MM-DD") parses as UTC midnight,
+// which is the previous day locally. Parse at local noon so setDate() and DST stay safe.
+function toDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function parseDate(dateStr) {
+  return new Date(dateStr + 'T12:00:00');
+}
+
 function getMondayOfWeek(date) {
-  const d = new Date(date);
+  const d = parseDate(date);
   const day = d.getDay();
   const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  return new Date(d.setDate(diff)).toISOString().split('T')[0];
+  return toDateStr(new Date(d.setDate(diff)));
 }
 
 function formatTime(seconds) {
@@ -645,10 +656,10 @@ function getWorkoutCountForDate(type, comp, dateStr) {
 
 function sumOverRange(getterFn, startDateStr, endDateStr) {
   let total = 0;
-  const d = new Date(startDateStr);
-  const end = new Date(endDateStr);
+  const d = parseDate(startDateStr);
+  const end = parseDate(endDateStr);
   while (d <= end) {
-    const dateStr = d.toISOString().split('T')[0];
+    const dateStr = toDateStr(d);
     total += getterFn(dateStr);
     d.setDate(d.getDate() + 1);
   }
@@ -659,7 +670,7 @@ function renderTracking() {
   const trackable = SCHEDULED_ORDER.filter(k => ROUTINE[k].trackable);
   const completed = trackable.filter(k => state.completed[k]).length;
   const date = document.getElementById('currentDate').value;
-  const d = new Date(date);
+  const d = parseDate(date);
   const month = d.getMonth() + 1;
   const year = d.getFullYear();
   const dayOfMonth = d.getDate();
@@ -691,12 +702,12 @@ function renderTracking() {
         ${(() => {
           const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
           const monday = getMondayOfWeek(date);
-          const d = new Date(monday);
+          const d = parseDate(monday);
           let html = '';
           for (let i = 0; i < 7; i++) {
             const dayDate = new Date(d);
             dayDate.setDate(dayDate.getDate() + i);
-            const dayStr = dayDate.toISOString().split('T')[0];
+            const dayStr = toDateStr(dayDate);
             const sleepHours = state.sleepData[dayStr] || 0;
             const times = state.sleepTimes[dayStr] || { bed: '', wake: '' };
             html += `<div style="background:#f0f0f0;padding:8px;border-radius:4px;">
@@ -822,10 +833,10 @@ function getProjectHoursForDate(proj, dateStr) {
 
 function sumProjectHours(proj, startDateStr, endDateStr) {
   let total = 0;
-  const d = new Date(startDateStr);
-  const end = new Date(endDateStr);
+  const d = parseDate(startDateStr);
+  const end = parseDate(endDateStr);
   while (d <= end) {
-    const dateStr = d.toISOString().split('T')[0];
+    const dateStr = toDateStr(d);
     total += getProjectHoursForDate(proj, dateStr);
     d.setDate(d.getDate() + 1);
   }
@@ -891,7 +902,7 @@ function renderProjects() {
   }
   
   const date = document.getElementById('currentDate').value;
-  const d = new Date(date);
+  const d = parseDate(date);
   const yearStart = `${d.getFullYear()}-01-01`;
   const monthStart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
   const weekStart = getMondayOfWeek(date);
