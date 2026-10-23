@@ -58,8 +58,8 @@
     
     <div class="settings">
       <div class="grid-2">
-        <div><label>Wake Time</label><input type="time" id="wakeTime" value="05:30"></div>
-        <div><label>Bedtime (for sleep tracking)</label><input type="time" id="bedTime" value="22:00" onchange="state.bedTime=this.value;saveData(document.getElementById('currentDate').value);"></div>
+        <div><label>Wake Time</label><input type="time" id="wakeTime" value="05:30" onchange="localStorage.setItem('wakeTime', this.value);"></div>
+        <div><label>Bedtime (for sleep tracking)</label><input type="time" id="bedTime" value="22:00" onchange="state.bedTime=this.value;localStorage.setItem('bedTime', this.value);saveData(document.getElementById('currentDate').value);"></div>
       </div>
       
       <div style="margin-top:10px;">
@@ -195,7 +195,9 @@ let state = {
 function init() {
   const today = toDateStr(new Date());
   document.getElementById('currentDate').value = today;
+  state.bedTime = localStorage.getItem('bedTime') || state.bedTime;
   document.getElementById('bedTime').value = state.bedTime;
+  document.getElementById('wakeTime').value = localStorage.getItem('wakeTime') || '05:30';
   lastLoadedDate = today;
   loadData(today);
   render();
@@ -324,6 +326,7 @@ function handleDateChange() {
 
   // Stop any running timer when switching dates — it doesn't make sense
   // for a timer to keep counting into a day you're no longer viewing.
+  cancelPendingResume();
   if (state.timerRunning) {
     state.timerRunning = false;
   }
@@ -380,20 +383,41 @@ function toggleWorkoutComponent(type, component) {
 }
 
 let inputIdleTimeout;
+let resumeAfterEdit = false;
 
+// Pause while a time is being typed in, then resume 5s later — but only if
+// the timer was running before the edit. A stopped timer stays stopped.
 function updateProjectTime(proj, h, m, s) {
-  state.projectTimers[proj] = h * 3600 + m * 60 + s;
+  state.projectTimers[proj] = (h || 0) * 3600 + (m || 0) * 60 + (s || 0);
+  if (state.timerRunning) resumeAfterEdit = true;
   state.timerRunning = false;
   clearTimeout(inputIdleTimeout);
   inputIdleTimeout = setTimeout(() => {
-    state.timerRunning = true;
-    render();
+    if (resumeAfterEdit) {
+      state.timerRunning = true;
+      render();
+    }
+    resumeAfterEdit = false;
   }, 5000);
   saveState();
   render();
 }
 
+// Any explicit start/stop overrides a pending resume from updateProjectTime.
+function cancelPendingResume() {
+  clearTimeout(inputIdleTimeout);
+  resumeAfterEdit = false;
+}
+
+function stopAllTimers() {
+  cancelPendingResume();
+  state.timerRunning = false;
+  saveState();
+  render();
+}
+
 function toggleTimer(project) {
+  cancelPendingResume();
   if (state.activeProject === project) {
     state.timerRunning = !state.timerRunning;
   } else {
@@ -846,6 +870,7 @@ function sumProjectHours(proj, startDateStr, endDateStr) {
 function clearProjectTimer(proj) {
   if (!confirm(`Clear today's ${proj} timer back to 0? This won't affect past days already recorded.`)) return;
   state.projectTimers[proj] = 0;
+  cancelPendingResume();
   if (state.activeProject === proj) state.timerRunning = false;
   saveState();
   render();
@@ -898,7 +923,7 @@ function renderProjects() {
   
   html += `</div>`;
   if (state.timerRunning) {
-    html += `<button onclick="state.timerRunning=false;saveState();render()" style="background:#f44336;color:#fff;width:100%;margin-bottom:20px;">⏹ Stop All</button>`;
+    html += `<button onclick="stopAllTimers()" style="background:#f44336;color:#fff;width:100%;margin-bottom:20px;">⏹ Stop All</button>`;
   }
   
   const date = document.getElementById('currentDate').value;
