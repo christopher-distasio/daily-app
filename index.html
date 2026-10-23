@@ -58,7 +58,7 @@
     
     <div class="settings">
       <div class="grid-2">
-        <div><label>Wake Time</label><input type="time" id="wakeTime" value="05:30" onchange="localStorage.setItem('wakeTime', this.value);"></div>
+        <div><label>Wake Time</label><input type="time" id="wakeTime" value="08:00" onchange="localStorage.setItem('wakeTime', this.value);"></div>
         <div><label>Bedtime (for sleep tracking)</label><input type="time" id="bedTime" value="22:00" onchange="state.bedTime=this.value;localStorage.setItem('bedTime', this.value);saveData(document.getElementById('currentDate').value);"></div>
       </div>
       
@@ -197,7 +197,7 @@ function init() {
   document.getElementById('currentDate').value = today;
   state.bedTime = localStorage.getItem('bedTime') || state.bedTime;
   document.getElementById('bedTime').value = state.bedTime;
-  document.getElementById('wakeTime').value = localStorage.getItem('wakeTime') || '05:30';
+  document.getElementById('wakeTime').value = localStorage.getItem('wakeTime') || '08:00';
   lastLoadedDate = today;
   loadData(today);
   render();
