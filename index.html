@@ -50,6 +50,8 @@
     .hydration-buttons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px; }
     .hydration-buttons button { padding: 8px; font-size: 12px; }
     .hidden { display: none; }
+    .mini-row { display: flex; gap: 4px; }
+    .mini { padding: 4px 10px; font-size: 13px; background: #f0f0f0; color: #333; }
   </style>
 </head>
 <body>
@@ -117,10 +119,10 @@ const VERSES = [
   { text: "But they that wait upon the LORD shall renew their strength; they shall mount up with wings as eagles.", reference: "Isaiah 40:31", id: 20 }
 ];
 
-const CHECKLIST = [
+const DEFAULT_CHECKLIST = [
   { time: '8:00 AM', tag: 'FIXED', items: ['Out of bed (no snoozing)'] },
   { time: '8:15 AM', tag: 'done by', items: ['CPAP numbers checked (AHI, leak, hours)', 'Last night logged', 'Dream work / reconnoitering', 'Aleve taken', 'Bright lights on', { t: 'Heat Pad Round 1 started', heat: 'on' }] },
-  { time: '8:30 AM', tag: 'done by', items: ['Outside with coffee or water', 'Stretching', 'Pets treated', 'Breath of fire and breathing exercises', 'Time with God (5 min)', 'Mind control (10 min max): grounding, "Why am I suffering" meditation', { t: 'Heat Pad off (20-minute break)', heat: 'off' }] },
+  { time: '8:30 AM', tag: 'done by', items: ['Outside with coffee or water', 'Water the seeds', 'Stretching', 'Pets treated', 'Breath of fire and breathing exercises', 'Time with God (5 min)', 'Mind control (10 min max): grounding, "Why am I suffering" meditation', { t: 'Heat Pad off (20-minute break)', heat: 'off' }] },
   { time: '8:50 AM', tag: 'done by', items: ['Drinks and yogurt prepped', { t: 'Heat Pad Round 2 started', heat: 'on' }] },
   { time: '9:15 AM', tag: 'done by', items: ['Eaten', 'Pills taken', 'Cash has his supplement', { t: 'Heat Pad off', heat: 'off' }] },
   { time: '10:30 AM', tag: 'done by', items: ['Workday started', 'Stock report/engagement/research'] },
@@ -138,22 +140,47 @@ const CHECKLIST = [
   { time: '9:45 PM', tag: 'done by', items: ['Any bathing + grooming + skincare', 'Last bathroom trip', 'Be in bed, mask on, lights off, audio off', { t: 'Evening practice started (reflection, slow breathing, body scan)', fixed: true }] }
 ];
 
-// Build ROUTINE entries + SCHEDULED_ORDER from CHECKLIST (key = slug of the item text)
+// The checklist is user-editable and saved under 'checklist'. Each item keeps the
+// key it was given (slug of the original text for defaults), so completion
+// history survives renames and moves. item.date = shown on that date only.
+let CHECKLIST = loadChecklist();
+
+function loadChecklist() {
+  try {
+    const raw = localStorage.getItem('checklist');
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  const used = new Set();
+  return DEFAULT_CHECKLIST.map(block => ({ ...block, items: block.items.map(it => {
+    const item = typeof it === 'string' ? { t: it } : { ...it };
+    let key = 'c_' + item.t.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 40);
+    while (used.has(key)) key += '_';
+    used.add(key);
+    item.key = key;
+    return item;
+  }) }));
+}
+
+function saveChecklist() {
+  localStorage.setItem('checklist', JSON.stringify(CHECKLIST));
+  rebuildRoutine();
+  render();
+}
+
+// Rebuild ROUTINE entries + SCHEDULED_ORDER from CHECKLIST (date-only items aren't tracked)
 const ROUTINE = {};
 const SCHEDULED_ORDER = [];
-CHECKLIST.forEach(block => {
-  block.items = block.items.map(it => {
-    const item = typeof it === 'string' ? { t: it } : it;
-    let key = 'c_' + item.t.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 40);
-    while (ROUTINE[key]) key += '_';
-    item.key = key;
-    ROUTINE[key] = { name: item.t, trackable: true, scheduled: true };
-    SCHEDULED_ORDER.push(key);
-    return item;
-  });
-});
+function rebuildRoutine() {
+  Object.keys(ROUTINE).forEach(k => delete ROUTINE[k]);
+  SCHEDULED_ORDER.length = 0;
+  CHECKLIST.forEach(block => block.items.forEach(it => {
+    ROUTINE[it.key] = { name: it.t, trackable: !it.date, scheduled: true };
+    if (!it.date) SCHEDULED_ORDER.push(it.key);
+  }));
+  Object.assign(ROUTINE, ANYTIME_ROUTINE);
+}
 
-Object.assign(ROUTINE, {
+const ANYTIME_ROUTINE = {
   // Anytime activities (no scheduled times)
   cashActivity: { name: '15 min activity with Cash', trackable: true, scheduled: false },
   stretchMobility: { name: 'Stretching + Standing mobility (knees→back→arms)', trackable: true, scheduled: false },
@@ -162,9 +189,110 @@ Object.assign(ROUTINE, {
   workoutC: { name: 'Workout C', trackable: true, scheduled: false, exercises: ['Suitcase carry', 'Lateral raises', 'Rotation', 'Dead bug/bird dog'] },
   cardio: { name: 'Cardio', trackable: true, scheduled: false },
   foodLog: { name: 'Log food', trackable: true, scheduled: false },
-});
+};
+rebuildRoutine();
 
 const ANYTIME_ORDER = ['cashActivity', 'stretchMobility', 'workoutA', 'workoutB', 'workoutC', 'cardio', 'foodLog'];
+
+function isItemVisible(it, date) { return !it.date || it.date === date; }
+
+function clockToMinutes(s) {
+  const m = /(\d+):(\d+)\s*(AM|PM)/i.exec(s || '');
+  if (!m) return 0;
+  return (+m[1] % 12 + (/pm/i.test(m[3]) ? 12 : 0)) * 60 + +m[2];
+}
+
+function newItemKey() { return 'c_u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5); }
+
+// New time blocks go in time order; after that they can be moved freely.
+function addBlock() {
+  const time = document.getElementById('newBlockTime').value;
+  if (!time) return alert('Pick a time for the new block');
+  const label = formatClock(time);
+  const tag = document.getElementById('newBlockTag').value;
+  const first = document.getElementById('newBlockTask').value.trim();
+  const items = first ? [{ t: first, key: newItemKey() }] : [];
+  let at = CHECKLIST.findIndex(b => clockToMinutes(b.time) > clockToMinutes(label));
+  if (at === -1) at = CHECKLIST.length;
+  CHECKLIST.splice(at, 0, { time: label, tag, items });
+  saveChecklist();
+}
+
+function moveBlock(bi, dir) {
+  const to = bi + dir;
+  if (to < 0 || to >= CHECKLIST.length) return;
+  [CHECKLIST[bi], CHECKLIST[to]] = [CHECKLIST[to], CHECKLIST[bi]];
+  saveChecklist();
+}
+
+function editBlock(bi) {
+  const block = CHECKLIST[bi];
+  const time = prompt('Time (e.g. 8:30 AM):', block.time);
+  if (time === null || !time.trim()) return;
+  const tag = prompt('Tag ("done by" or "FIXED"):', block.tag);
+  block.time = time.trim();
+  if (tag !== null && tag.trim()) block.tag = /^fixed$/i.test(tag.trim()) ? 'FIXED' : tag.trim();
+  saveChecklist();
+}
+
+function deleteBlock(bi) {
+  const block = CHECKLIST[bi];
+  if (!confirm(`Delete the ${block.time} block and its ${block.items.length} task(s)? Past check-offs stay recorded.`)) return;
+  CHECKLIST.splice(bi, 1);
+  saveChecklist();
+}
+
+function addItem(bi) {
+  const t = document.getElementById(`newItem_${bi}`).value.trim();
+  if (!t) return alert('Enter a task');
+  const item = { t, key: newItemKey() };
+  if (document.getElementById(`newItemRepeat_${bi}`).value === 'once') item.date = document.getElementById('currentDate').value;
+  CHECKLIST[bi].items.push(item);
+  saveChecklist();
+}
+
+// Moves past items hidden on this date; at a block's edge it hops into the neighboring block.
+function moveItem(bi, ii, dir) {
+  const date = document.getElementById('currentDate').value;
+  const items = CHECKLIST[bi].items;
+  let j = ii + dir;
+  while (j >= 0 && j < items.length && !isItemVisible(items[j], date)) j += dir;
+  const inBlock = j >= 0 && j < items.length;
+  if (!inBlock && !CHECKLIST[bi + dir]) return;
+  const [item] = items.splice(ii, 1);
+  // Moving down, the removal shifts the neighbor to j-1, so inserting at j lands just after it
+  if (inBlock) items.splice(j, 0, item);
+  else if (dir < 0) CHECKLIST[bi - 1].items.push(item);
+  else CHECKLIST[bi + 1].items.unshift(item);
+  saveChecklist();
+}
+
+function editItem(bi, ii) {
+  const item = CHECKLIST[bi].items[ii];
+  const t = prompt('Task:', item.t);
+  if (t === null || !t.trim()) return;
+  item.t = t.trim();
+  saveChecklist();
+}
+
+function deleteItem(bi, ii) {
+  const item = CHECKLIST[bi].items[ii];
+  if (!confirm(`Delete "${item.t}"? Past check-offs stay recorded.`)) return;
+  CHECKLIST[bi].items.splice(ii, 1);
+  saveChecklist();
+}
+
+function formatClock(hhmm) {
+  if (!hhmm) return '';
+  let [h, m] = hhmm.split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${h}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
 
 let lastLoadedDate = null;
 
@@ -205,7 +333,8 @@ function init() {
   setInterval(() => {
     if (state.timerRunning && state.activeProject) {
       state.projectTimers[state.activeProject]++;
-      render();
+      // Only the Projects view shows the ticking timer; re-rendering others would wipe half-typed inputs
+      if (state.view === 'projects') render();
       saveTickCounter++;
       if (saveTickCounter >= 10) {
         saveTickCounter = 0;
@@ -596,7 +725,8 @@ function renderRoutine() {
   
 
   
-  const allKeys = SCHEDULED_ORDER;
+  const currentDate = document.getElementById('currentDate').value;
+  const allKeys = CHECKLIST.flatMap(b => b.items.filter(it => isItemVisible(it, currentDate)).map(it => it.key));
   const doneCount = allKeys.filter(k => state.completed[k]).length;
   html += `
     <div class="card card-blue" style="position:sticky;top:0;z-index:5;">
@@ -605,33 +735,68 @@ function renderRoutine() {
     </div>
   `;
 
-  CHECKLIST.forEach(block => {
-    const blockDone = block.items.filter(it => state.completed[it.key]).length;
-    const allDone = blockDone === block.items.length;
+  CHECKLIST.forEach((block, bi) => {
+    const visible = block.items.map((it, ii) => ({ it, ii })).filter(({ it }) => isItemVisible(it, currentDate));
+    const blockDone = visible.filter(({ it }) => state.completed[it.key]).length;
+    const allDone = visible.length > 0 && blockDone === visible.length;
     const fixed = block.tag === 'FIXED';
     const tagColor = fixed ? '#c62828' : (block.steps ? '#2e7d32' : '#555');
     html += `
       <div class="card" style="border-left:6px solid ${fixed ? '#c62828' : '#2196f3'};${allDone ? 'opacity:0.65;background:#f1f8f1;' : ''}">
-        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;">
-          <div><strong style="font-size:17px;">${block.time}</strong> <span style="font-size:12px;font-weight:bold;color:${tagColor};text-transform:${fixed ? 'uppercase' : 'none'};">${block.tag}</span></div>
-          <span style="font-size:12px;color:#666;">${blockDone}/${block.items.length}</span>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+          <div><strong style="font-size:17px;">${escapeHtml(block.time)}</strong> <span style="font-size:12px;font-weight:bold;color:${tagColor};text-transform:${fixed ? 'uppercase' : 'none'};">${escapeHtml(block.tag)}</span> <span style="font-size:12px;color:#666;">${blockDone}/${visible.length}</span></div>
+          <div class="mini-row">
+            <button class="mini" onclick="moveBlock(${bi}, -1)" title="Move time up">↑</button>
+            <button class="mini" onclick="moveBlock(${bi}, 1)" title="Move time down">↓</button>
+            <button class="mini" onclick="editBlock(${bi})" title="Edit time">✎</button>
+            <button class="mini" onclick="deleteBlock(${bi})" title="Delete time" style="color:#c62828;">✕</button>
+          </div>
         </div>
-        ${block.items.map(it => {
+        ${visible.map(({ it, ii }) => {
           const done = !!state.completed[it.key];
           const bg = done ? '#e8f5e9' : (it.heat === 'on' ? '#fff3e0' : it.heat === 'off' ? '#e3f2fd' : '#fff');
           return `<div class="step ${done ? 'done' : ''}" style="background:${bg};margin-bottom:6px;padding:10px;">
             <div class="step-header" style="align-items:center;gap:10px;">
-              <div style="font-size:14px;${it.heat ? 'font-weight:bold;' : ''}">${it.heat === 'on' ? '🔥 ' : it.heat === 'off' ? '❄️ ' : ''}${it.t}${it.fixed ? ' <span style="color:#c62828;font-size:11px;font-weight:bold;">FIXED</span>' : ''}</div>
+              <div style="font-size:14px;${it.heat ? 'font-weight:bold;' : ''}">${it.heat === 'on' ? '🔥 ' : it.heat === 'off' ? '❄️ ' : ''}${escapeHtml(it.t)}${it.fixed ? ' <span style="color:#c62828;font-size:11px;font-weight:bold;">FIXED</span>' : ''}${it.date ? ' <span style="color:#666;font-size:11px;">this date only</span>' : ''}</div>
               <button onclick="toggleStep('${it.key}')" style="flex-shrink:0;background:${done ? '#4caf50' : '#f0f0f0'};color:${done ? '#fff' : '#333'};">${done ? '✓' : 'Mark'}</button>
+            </div>
+            <div class="mini-row" style="margin-top:6px;">
+              <button class="mini" onclick="moveItem(${bi}, ${ii}, -1)" title="Move task up">↑</button>
+              <button class="mini" onclick="moveItem(${bi}, ${ii}, 1)" title="Move task down">↓</button>
+              <button class="mini" onclick="editItem(${bi}, ${ii})" title="Edit task">✎</button>
+              <button class="mini" onclick="deleteItem(${bi}, ${ii})" title="Delete task" style="color:#c62828;">✕</button>
             </div>
           </div>`;
         }).join('')}
         ${block.steps ? `<div style="margin-top:8px;"><label>Minutes done today: <input type="number" min="0" value="${state.stepsMinutes || ''}" placeholder="______" onchange="state.stepsMinutes = Math.max(0, parseInt(this.value) || 0); saveState();" style="width:90px;padding:6px;"/></label></div>` : ''}
+        <div style="display:flex;gap:6px;margin-top:8px;">
+          <input id="newItem_${bi}" type="text" placeholder="Add a task to ${escapeHtml(block.time)}" style="flex:1;min-width:0;padding:8px;border:1px solid #ddd;border-radius:4px;">
+          <select id="newItemRepeat_${bi}" style="padding:8px;border:1px solid #ddd;border-radius:4px;">
+            <option value="daily">Every day</option>
+            <option value="once">This date only</option>
+          </select>
+          <button class="btn-success" onclick="addItem(${bi})" style="padding:8px 12px;">+</button>
+        </div>
       </div>
     `;
   });
 
   html += `
+    <div class="card" style="border-left:6px solid #4caf50;">
+      <h3 style="margin-top:0;">+ New Time</h3>
+      <div class="grid-2">
+        <div><label>Time</label><input id="newBlockTime" type="time"></div>
+        <div><label>Tag</label>
+          <select id="newBlockTag" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;">
+            <option value="done by">done by</option>
+            <option value="FIXED">FIXED</option>
+          </select>
+        </div>
+      </div>
+      <input id="newBlockTask" type="text" placeholder="First task (optional)" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;margin-top:8px;">
+      <button class="btn-success" onclick="addBlock()" style="width:100%;margin-top:10px;">+ Add Time</button>
+    </div>
+
     <h2>Hydration</h2>
     <div class="card">
       <p style="margin-bottom:10px;"><strong>${state.hydration}/180 oz</strong></p>
@@ -763,7 +928,7 @@ function renderTracking() {
         const monthlyPct = Math.round(monthlyCount / monthlyGoal * 100);
         const annualPct = Math.round(annualCount / annualGoal * 100);
         return `<div style="font-size:16px;margin-bottom:10px;padding:8px;background:#f0f0f0;border-radius:4px;">
-          <strong>${ROUTINE[k].name}</strong><br>
+          <strong>${escapeHtml(ROUTINE[k].name)}</strong><br>
           <label>Today: <input type="number" value="${done}" onchange="state.completed['${k}'] = this.value > 0; saveState(); render();" style="width:40px;padding:2px;"/></label><br>
           Weekly: ${weeklyCount}/${weeklyTarget} (${weeklyPct}%) | Monthly: ${monthlyCount}/${monthlyGoal} (${monthlyPct}%) | Annual: ${annualCount}/${annualGoal} (${annualPct}%)
         </div>`;
@@ -784,13 +949,13 @@ function renderTracking() {
         const monthlyPct = Math.round(monthlyCount / monthlyGoal * 100);
         const annualPct = Math.round(annualCount / annualGoal * 100);
         return `<div style="font-size:16px;margin-bottom:10px;padding:8px;background:#f0f0f0;border-radius:4px;">
-          <strong>${ROUTINE[k].name}</strong><br>
+          <strong>${escapeHtml(ROUTINE[k].name)}</strong><br>
           <label>Today: <input type="number" value="${done}" onchange="state.anytimeCompleted['${k}'] = {done: this.value > 0}; saveState(); render();" style="width:40px;padding:2px;"/></label><br>
           Weekly: ${weeklyCount}/${weeklyTarget} (${weeklyPct}%) | Monthly: ${monthlyCount}/${monthlyGoal} (${monthlyPct}%) | Annual: ${annualCount}/${annualGoal} (${annualPct}%)
         </div>`;
       }).join('')}
     </div>
-    
+
     <div class="card">
       <h3>Workout Components (Weekly Goal: 6 each)</h3>
       ${['A', 'B', 'C'].map(type => {
