@@ -28,9 +28,9 @@
     .btn-success { background: #4caf50; color: #fff; }
     .btn-info { background: #2196f3; color: #fff; }
     .btn-danger { background: #f44336; color: #fff; }
-    .view-tabs { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px; }
-    .view-tabs button { width: 100%; }
-    .view-tabs button.active { background: #333; }
+    .view-tabs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 10px; margin-bottom: 10px; }
+    .view-tabs button { width: 100%; padding: 10px 2px; font-size: 13px; }
+    .view-tabs button.active { background: #333; color: #fff; }
     .view-tabs button:not(.active) { background: #999; color: #fff; }
     .card { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; }
     .card-blue { background: #e3f2fd; }
@@ -52,6 +52,12 @@
     .hidden { display: none; }
     .mini-row { display: flex; gap: 4px; }
     .mini { padding: 4px 10px; font-size: 13px; background: #f0f0f0; color: #333; }
+    details.card summary { cursor: pointer; font-size: 15px; }
+    .cash-guide { font-size: 14px; line-height: 1.5; }
+    .cash-guide p { margin: 8px 0; }
+    .cash-guide h4 { margin: 12px 0 4px; font-size: 14px; }
+    .cash-guide ul, .cash-guide ol { margin: 6px 0 6px 20px; }
+    .cash-guide li { margin-bottom: 4px; }
   </style>
 </head>
 <body>
@@ -78,6 +84,7 @@
         <button onclick="setView('tracking')">📊 Tracking</button>
         <button onclick="setView('projects')">⏱️ Projects</button>
         <button onclick="setView('workouts')">💪 Workouts</button>
+        <button onclick="setView('cash')">🐕 Cash</button>
       </div>
       
       <div class="grid-2" style="margin-top: 10px;">
@@ -93,6 +100,7 @@
     <div id="trackingView" class="hidden"></div>
     <div id="projectsView" class="hidden"></div>
     <div id="workoutsView" class="hidden"></div>
+    <div id="cashView" class="hidden"></div>
   </div>
 
   <script>
@@ -161,6 +169,38 @@ function loadChecklist() {
   }) }));
 }
 
+// Cash's daily care, added once to whatever checklist exists. Same-time blocks are
+// reused; otherwise a new block goes in time order. The flag stops a deleted task
+// from coming back. Item keys are fixed so completion history lines up.
+const CASH_DAILY_TASKS = [
+  { time: '8:00 AM', tag: 'done by', key: 'c_cash_out_morning', t: 'Let Cash out back' },
+  { time: '8:15 AM', tag: 'done by', key: 'c_cash_breakfast', t: 'Cash breakfast: bowl down 15 minutes, then pick it up (save a handful for training)' },
+  { time: '9:30 AM', tag: 'start by', key: 'c_cash_exercise', t: 'Dog park with Cash (fixed leash, no toys). Sore-back day: "Find it" in the yard instead' },
+  { time: '10:15 AM', tag: 'done by', key: 'c_cash_training_am', t: 'Cash training, 10 min: door "Stay" and "Leave it"' },
+  { time: '12:00 PM', tag: 'done by', key: 'c_cash_out_noon', t: 'Let Cash out back + a few minutes of "Find it"' },
+  { time: '5:00 PM', tag: 'start by', key: 'c_cash_dinner', t: 'Cash dinner: bowl down 15 minutes, then pick it up' },
+  { time: '5:30 PM', tag: 'done by', key: 'c_cash_training_pm', t: 'Cash training, 10 min: "With me" and "Look at that"' },
+  { time: '9:30 PM', tag: 'done by', key: 'c_cash_out_night', t: 'Let Cash out back one last time. Leash up high, snacks and trash away' }
+];
+
+function addCashTasksOnce() {
+  if (localStorage.getItem('cashPlanV1')) return;
+  const existing = new Set(CHECKLIST.flatMap(b => b.items.map(it => it.key)));
+  CASH_DAILY_TASKS.forEach(({ time, tag, key, t }) => {
+    if (existing.has(key)) return;
+    let block = CHECKLIST.find(b => b.time === time);
+    if (!block) {
+      block = { time, tag, items: [] };
+      let at = CHECKLIST.findIndex(b => clockToMinutes(b.time) > clockToMinutes(time));
+      if (at === -1) at = CHECKLIST.length;
+      CHECKLIST.splice(at, 0, block);
+    }
+    block.items.push({ t, key });
+  });
+  localStorage.setItem('checklist', JSON.stringify(CHECKLIST));
+  localStorage.setItem('cashPlanV1', '1');
+}
+
 function saveChecklist() {
   localStorage.setItem('checklist', JSON.stringify(CHECKLIST));
   rebuildRoutine();
@@ -190,6 +230,7 @@ const ANYTIME_ROUTINE = {
   cardio: { name: 'Cardio', trackable: true, scheduled: false },
   foodLog: { name: 'Log food', trackable: true, scheduled: false },
 };
+addCashTasksOnce();
 rebuildRoutine();
 
 const ANYTIME_ORDER = ['cashActivity', 'stretchMobility', 'workoutA', 'workoutB', 'workoutC', 'cardio', 'foodLog'];
@@ -678,6 +719,7 @@ function importData(e) {
       Object.entries(backup).forEach(([key, value]) => {
         localStorage.setItem(key, value);
       });
+      if (!('cashPlanV1' in backup)) localStorage.removeItem('cashPlanV1');
       alert('Data restored. Refreshing...');
       location.reload();
     } catch (err) {
@@ -692,6 +734,8 @@ function render() {
   else if (state.view === 'tracking') renderTracking();
   else if (state.view === 'projects') renderProjects();
   else if (state.view === 'workouts') renderWorkouts();
+  else if (state.view === 'cash') renderCash();
+  if (state.view !== 'cash') document.getElementById('cashView').classList.add('hidden');
 }
 
 function renderRoutine() {
@@ -956,6 +1000,8 @@ function renderTracking() {
       }).join('')}
     </div>
 
+    ${cashTrackingCard(date, weekStart, monthStart, yearStart, daysInMonth, daysInYear)}
+
     <div class="card">
       <h3>Workout Components (Weekly Goal: 6 each)</h3>
       ${['A', 'B', 'C'].map(type => {
@@ -1003,6 +1049,295 @@ function renderTracking() {
   document.getElementById('projectsView').classList.add('hidden');
   document.getElementById('workoutsView').classList.add('hidden');
   document.getElementById('trackingView').classList.remove('hidden');
+}
+
+// ---- Cash's training plan ----
+// Everything here lives in localStorage, so Export/Import already covers it:
+// cashWeek, cashWalkStep, cashSetup, cashCare, cashWeekly_<date>, cashWalk_<date>.
+const CASH_WEEKS = [
+  { door: 'Gate up. "Stay" with door closed and cracked open', react: 'Block windows. Find his distance on outings', walks: 'Switch to 6-foot leash. "With me" in the yard', alone: 'Dog-proof. Kong when you leave. Teach "Leave it" with a fist' },
+  { door: '"Stay" with door half open', react: '"Look at that" at a safe distance. Teach "Let\'s go" at home', walks: '"With me" + "Go sniff" on your short walk', alone: '"Leave it" with treat on floor. 1 to 5 minute absences' },
+  { door: '"Stay" with door fully open, 5 to 10 seconds', react: '"Look at that" on every outing. Use "Let\'s go" when needed', walks: 'Alternate "With me" and sniff time on your walk', alone: '"Leave it" with snack bag and harness. 15 minute absences' },
+  { door: 'Practice with knocks and carrying bags', react: 'Friend approaches from 30 feet', walks: 'Treats every 10 steps of loose leash', alone: '30 minute absences' },
+  { door: 'Practice when family members come in', react: 'Friend approaches closer. Move a few feet closer to animals', walks: 'Treats every 20 steps. Busier routes when you both feel ready', alone: 'Longer absences in his dog-proofed room' },
+  { door: 'Practice with a friend visiting (Cash leashed)', react: 'Let him choose calm greetings with the friend', walks: 'Keep the routine. Long line only in open spaces', alone: 'Keep up routine. Try a bigger area if no damage' }
+];
+
+// Minutes per day on the 2:00 PM Short Cash walk; step up only when the last step felt OK.
+const CASH_WALK_STEPS = [5, 5, 10, 10, 15, 20];
+
+const CASH_WEEKLY_ITEMS = [
+  ['exercise', 'Morning exercise'],
+  ['door', 'Door "Stay" practice (5 minutes)'],
+  ['look', '"Look at that" or "Let\'s go" on the outing'],
+  ['withme', '"With me" loose-leash practice (5 minutes)'],
+  ['leaveit', '"Leave it" practice (5 minutes)'],
+  ['putaway', 'Snacks, harness, and trash put away before leaving'],
+  ['kong', 'Kong or chew toy given at departure'],
+  ['hello', 'Calm hello on coming home']
+];
+
+const CASH_SETUP_GROUPS = [
+  ['Set up on day one', [
+    ['gate', 'Baby gate between the front door and the rest of the house (or close an inner door first)'],
+    ['idtag', 'Collar snug (two fingers underneath) with ID tag and current phone number'],
+    ['chip', 'Microchip info confirmed up to date'],
+    ['windows', 'View blocked at windows he watches from'],
+    ['snacks', 'Snacks in a closed cabinet or the fridge'],
+    ['trash', 'Lidded trash can'],
+    ['hook', 'Hook for the harness and leash, out of reach'],
+    ['feeder', 'Big feeder put away'],
+    ['retract', 'Retractable leash retired'],
+    ['fridge', 'Cue words written on the fridge']
+  ]],
+  ['Supplies', [
+    ['treats', 'Small, soft, tasty treats (hot dog, cheese, or chicken) and a treat pouch'],
+    ['leash', '6-foot leash'],
+    ['line', '15 to 20 foot long line'],
+    ['harness', 'Well-fitted harness (front-clip helps with pulling)'],
+    ['bed', 'Dog bed or mat for "Place"'],
+    ['pen', 'Baby gate or exercise pen'],
+    ['chews', 'Durable chew toys sized for a 70 lb dog'],
+    ['kongtoy', 'Stuffable toy such as a Kong, sized for a 70 lb dog'],
+    ['wrap', 'Yellow leash wrap or "Give me space" vest']
+  ]]
+];
+
+const CASH_CARE = [
+  ['flea', 'Flea and heartworm prevention', 'Every month', 30],
+  ['brush', 'Brush his coat', 'Weekly', 7],
+  ['teeth', 'Brush his teeth (or a dental chew)', 'A few times a week', 3],
+  ['ribs', 'Ribs check', 'Every couple of weeks: easy to feel without pressing, visible waist from above', 14],
+  ['nails', 'Trim nails', 'Every 3 to 4 weeks, or when you hear them clicking', 28],
+  ['vet', 'Vet visit', 'Yearly. At 8, ask about senior bloodwork', 365]
+];
+
+const CASH_GUIDE = [
+  ['How to use this plan', `
+    <p>Train in two or three short sessions a day, 5 to 10 minutes each, and work on one problem at a time per session. Older dogs learn fine; Cash just needs more repetitions to replace habits he has practiced for years.</p>
+    <ul><li>Morning: dog park or play, then one training session.</li><li>Evening: one or two training sessions, mixed with play.</li><li>Before you leave him alone: exercise first. A tired dog chews and barks less.</li></ul>
+    <p>Move on when he's getting each step right about 4 out of 5 tries. Repeat a week if he isn't.</p>`],
+  ['House rules and cue words', `
+    <p><strong>On the fridge:</strong> "Stay", "Place", "Quiet", "Leave it", "Yes!" (marker for a correct move). "OK" releases him from "Stay".</p>
+    <p><strong>Also used in the steps:</strong> "Come", "Look at that", "Let's go", "With me", "Go sniff", "Find it".</p>
+    <ul><li>Use the same words for each cue, everyone in the house.</li><li>Reward what you want within 1 to 2 seconds. Ignore or calmly interrupt what you don't.</li><li>Never yell or punish after the fact. He can't connect a scolding to a bag he chewed an hour ago.</li><li>End every session on a success, even an easy one.</li></ul>`],
+  ['Problem 1: Running out the door', `
+    <p>The top priority, because it can get him hurt. Block every chance to bolt now, and teach "Stay" so the door becomes a place to pause.</p>
+    <h4>Prevent it starting today</h4>
+    <ul><li>Put a baby gate between the front door and the rest of the house, or close an inner door before opening the outside one.</li><li>When guests arrive or packages come, put Cash behind the gate or on a leash first.</li><li>Keep his collar on with an ID tag and current phone number, and keep his microchip info up to date.</li><li>If he does get out, don't chase him. Run the other way, crouch, or call happily and reward big when he comes.</li></ul>
+    <h4>Teach "Stay" at the door (leash on for every step)</h4>
+    <ol><li>Stand at the closed door with Cash on leash. Reach for the knob. If he stays put, say "Yes!" and treat.</li><li>Open the door 1 inch. If he moves forward, close it gently (not on him). If he stays, "Yes!" and treat. Repeat until he stays 5 times in a row.</li><li>Open it a little wider each round: 6 inches, half open, all the way.</li><li>Add time: hold the door open 3, then 5, then 10 seconds before rewarding.</li><li>Release him with "OK" and walk out together. He only goes out after the release word.</li><li>Add real life: practice when someone knocks, when you carry bags, and when a family member walks in.</li><li>Only practice off leash once he's reliable on leash for at least a week, and keep the gate up for visitors.</li></ol>
+    <h4>Practice recall ("Come") as a backup</h4>
+    <ul><li>Use a long line in the yard. Say "Cash, come!" in a happy voice, back away, and give a jackpot (3 to 5 treats) when he arrives.</li><li>Never call him to something he dislikes, like a bath or nail trim.</li></ul>`],
+  ['Problem 2: Small animals and people too close', `
+    <p>Cash reacts when something is too close or too exciting. Keep him far enough away that he can still think, pay him for staying calm, and shrink that distance slowly over weeks. Every blow-up he rehearses makes the habit stronger, so avoiding them counts as training.</p>
+    <h4>Keep everyone safe when you're out</h4>
+    <ul><li>Cross the street, step behind a parked car, or turn around early when you see a trigger coming.</li><li>Go at quieter times and places while you train, including the dog park. If he stiffens, stares, or pulls there, give him more space or leave.</li><li>Speak up for him: "Please don't pet him, he's in training." People don't get to approach just because they ask.</li><li>A yellow leash wrap or "Give me space" vest warns people from a distance.</li><li>Block his view of squirrels, cats, and passers-by at windows he watches from.</li></ul>
+    <h4>Find his distance</h4>
+    <p>Watch how close a squirrel, cat, small dog, or person can be before he stiffens, stares, or starts pulling. Stay a few steps farther than that. Too close and he can't learn, so the answer is always more space, not a correction.</p>
+    <h4>Step 1: "Look at that" (calm attention = treat)</h4>
+    <ol><li>At his safe distance, the moment Cash notices the animal or person, say "Yes!" and give a treat.</li><li>Repeat every time he looks. The trigger appearing now predicts food.</li><li>After a few sessions he'll glance at the trigger and then back at you. Reward that big.</li><li>Move a few feet closer only after a session where he stayed calm the whole time.</li></ol>
+    <h4>Step 2: "Let's go" U-turn (your escape button)</h4>
+    <ol><li>At home, say "Let's go" in a happy voice, turn around, and treat him when he follows. Practice until he spins around eagerly.</li><li>When you're out, use it the moment something pops up too close, before he reacts.</li></ol>
+    <h4>Step 3: People approaching slowly</h4>
+    <ol><li>Ask a friend or family member to help. Start with them 30 feet away.</li><li>The friend takes a step or two closer while you treat Cash for staying loose and quiet. Then the friend walks away and the treats stop.</li><li>Over many sessions, close the gap. The friend never reaches toward him, stares, or leans over him.</li><li>Let Cash choose to go sniff the person. If he backs off, let him. Don't push greetings.</li></ol>
+    <h4>If he already reacted</h4>
+    <p>Don't yell or jerk the leash. Calmly turn and walk away to get distance, then reward him once he can take a treat again. Next time, start farther back.</p>`],
+  ['Walks: structure, with time to sniff', `
+    <p>On a long or retractable leash, Cash can reach a squirrel or a person before you can stop him, and a 70 lb dog lunging at the end of a long line is hard to hold. Sniffing is still good for him, so the change is that you decide when it's sniff time.</p>
+    <h4>Equipment</h4>
+    <ul><li>Around the neighborhood: a 6-foot leash and a well-fitted harness (a front-clip harness helps with pulling).</li><li>Retire the retractable leash. It teaches pulling and can snap or slip at the worst moment.</li><li>Save a 15 to 20 foot long line for open, empty spaces like a field or big yard, where nothing can surprise him.</li></ul>
+    <h4>The walk routine</h4>
+    <ol><li>Start each walk with "with me" walking. You pick the direction and pace.</li><li>Then say "Go sniff" and let him explore at leash length for a bit.</li><li>Alternate the two. When you see a trigger coming, switch to "with me" and get distance.</li></ol>
+    <h4>Teach loose-leash walking ("With me")</h4>
+    <ol><li>Start inside or in the yard. Every time he's next to your leg, say "Yes!" and treat at your hip.</li><li>Walk a few steps. Treat often while the leash is loose, every 2 to 3 steps at first.</li><li>If he pulls, stop and stand still. The moment the leash goes slack, "Yes!" and walk on.</li><li>If he keeps pulling, turn and walk the other way. Treat when he catches up beside you.</li><li>Slowly space the treats out to every 10, then 20 steps.</li></ol>`],
+  ['Problem 3: Chewing when left alone', `
+    <p>Chewing alone usually comes from boredom, the smell of food, or mild stress about being left. Remove the temptations, give him something better to chew, and make your leaving boring.</p>
+    <h4>Dog-proof before every departure</h4>
+    <ul><li>Snack bags, wrappers, and food go in a closed cabinet or the fridge. Not on counters, tables, or in bags on the floor.</li><li>Hang the harness and leash on a hook out of reach.</li><li>Use a lidded trash can.</li><li>Leave him in one dog-proofed room or behind a gate instead of the whole house.</li></ul>
+    <h4>Give him a better job</h4>
+    <ul><li>Hand him a stuffed, frozen Kong (kibble or treats mixed with a little plain yogurt or canned food) right as you leave.</li><li>Rotate 2 or 3 chew toys so they stay interesting. Put them away when you get home.</li><li>Exercise before you go.</li></ul>
+    <h4>Make leaving and coming home no big deal</h4>
+    <ol><li>Skip long goodbyes. Give the Kong, walk out calmly.</li><li>When you get home, ignore him for a minute until he settles, then greet him quietly.</li><li>Practice short absences: step out for 1 minute, then 5, then 15, then 30. Come back before he gets into trouble.</li><li>If you find something chewed, just clean it up. Scolding after the fact doesn't work.</li></ol>
+    <h4>Teach "Leave it" (helps with harness and bags)</h4>
+    <ol><li>Hold a treat in a closed fist. When he stops sniffing or pawing at it, say "Yes!" and give a treat from your other hand.</li><li>Add the words "Leave it" as he backs off.</li><li>Practice with a treat on the floor under your foot, then with a snack bag or his harness on the floor.</li></ol>`],
+  ['Feeding and exercise', `
+    <ul><li>Two measured meals a day. No free-feeding; put the big feeder away.</li><li>Start around 3 to 3½ cups of kibble a day total, split between the two meals. Check the bag's calories per cup and adjust.</li><li>Wet food counts as food. If you add it, take some kibble out.</li><li>Save a handful of each meal's kibble for training rewards.</li><li>Daily dog park for now. On sore-back days, swap in "Find it" or scatter feeding in the yard.</li><li>A tired dog chews and reacts less, so exercise comes before any time alone.</li></ul>`],
+  ['Discipline: firm and fair', `
+    <ul><li>He earns freedom. Run of the house, off-leash time, and greeting people come after he shows he can handle less.</li><li>Same rules, same words, every day, from everyone in the house.</li><li>Catch the bad habit in the moment: a calm "Leave it" or "Uh-uh," then show him what to do instead and reward that.</li><li>No hitting and no punishment after the fact. He can't connect it to what he did earlier, and it can make him more wary of people's hands.</li><li>Prevention is discipline too. If he can't reach it, he can't chew it.</li></ul>`],
+  ['When to get help', `
+    <ul><li><strong>See the vet</strong> if the chewing or barking is new or getting worse, or he seems restless, painful, or confused. In older dogs, dental pain, joint pain, or hearing and vision changes can drive these behaviors.</li><li><strong>Call a trainer</strong> (one private session is often enough) if barking turns into lunging, growling, or snapping, or if he gets frantic when left alone: drooling, howling, scratching at doors, or hurting himself trying to get out.</li><li><strong>Free help:</strong> Kikopup on YouTube has short videos on door manners, "Place", "Leave it", and alone-time training.</li></ul>`]
+];
+
+function cashRead(key, fallback) {
+  try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; } catch (e) { return fallback; }
+}
+
+function cashDate() { return document.getElementById('currentDate').value; }
+
+function cashStepper(key, delta, max) {
+  const now = parseInt(localStorage.getItem(key)) || 0;
+  localStorage.setItem(key, Math.min(max, Math.max(0, now + delta)));
+  render();
+}
+
+function toggleCashWeekly(dateStr, id) {
+  const day = cashRead(`cashWeekly_${dateStr}`, {});
+  day[id] = !day[id];
+  localStorage.setItem(`cashWeekly_${dateStr}`, JSON.stringify(day));
+  render();
+}
+
+function toggleCashSetup(id) {
+  const setup = cashRead('cashSetup', {});
+  setup[id] = !setup[id];
+  localStorage.setItem('cashSetup', JSON.stringify(setup));
+  render();
+}
+
+function markCashCare(id) {
+  const care = cashRead('cashCare', {});
+  care[id] = cashDate();
+  localStorage.setItem('cashCare', JSON.stringify(care));
+  render();
+}
+
+function cashWalkMinutes(dateStr) { return parseInt(localStorage.getItem(`cashWalk_${dateStr}`)) || 0; }
+
+function setCashWalk(value) {
+  localStorage.setItem(`cashWalk_${cashDate()}`, Math.max(0, parseInt(value) || 0));
+  render();
+}
+
+function cashWalkCard() {
+  const step = Math.min(parseInt(localStorage.getItem('cashWalkStep')) || 0, CASH_WALK_STEPS.length - 1);
+  const date = cashDate();
+  const weekTotal = sumOverRange(cashWalkMinutes, getMondayOfWeek(date), date);
+  const atTop = step === CASH_WALK_STEPS.length - 1;
+  return `
+    <div class="card card-orange">
+      <h3 style="margin-top:0;">🚶 Your walk with Cash</h3>
+      <p style="font-size:15px;margin-bottom:8px;">Today's goal: <strong>${CASH_WALK_STEPS[step]} minutes</strong> (step ${step + 1} of ${CASH_WALK_STEPS.length}), on your 2:00 PM Short Cash walk. Any amount counts.</p>
+      <label style="font-weight:normal;font-size:14px;">Minutes today: <input type="number" min="0" value="${cashWalkMinutes(date) || ''}" onchange="setCashWalk(this.value)" style="width:80px;padding:6px;"/></label>
+      <p style="font-size:14px;color:#555;margin:8px 0;">This week: ${weekTotal} minutes</p>
+      <div class="mini-row" style="flex-wrap:wrap;">
+        <button class="mini" onclick="cashStepper('cashWalkStep', -1, ${CASH_WALK_STEPS.length - 1})">← Easier</button>
+        <button class="mini" onclick="cashStepper('cashWalkStep', 1, ${CASH_WALK_STEPS.length - 1})">Felt OK, step up →</button>
+      </div>
+      <p style="font-size:13px;color:#555;margin-top:8px;">Stay on a step as long as you need; six weeks is a target, not a deadline. If walking makes your pain worse, ease back and check with your doctor. ${atTop ? 'You\'re at the top step: try swapping a dog park day for a longer walk when you feel ready.' : 'The dog park stays as his main exercise until you\'re ready for longer walks.'}</p>
+    </div>`;
+}
+
+function cashCareRow([id, name, how, days]) {
+  const last = cashRead('cashCare', {})[id];
+  let status = '<span style="color:#666;">Not logged yet</span>';
+  if (last) {
+    const left = days - Math.round((parseDate(cashDate()) - parseDate(last)) / 86400000);
+    status = left <= 0
+      ? `<span style="color:#c62828;font-weight:bold;">Due</span> <span style="color:#666;">(last ${last})</span>`
+      : `<span style="color:#2e7d32;">Next in ${left} day${left === 1 ? '' : 's'}</span> <span style="color:#666;">(last ${last})</span>`;
+  }
+  return `<div class="step" style="padding:10px;margin-bottom:6px;">
+    <div class="step-header" style="align-items:center;gap:10px;">
+      <div style="font-size:14px;"><strong>${name}</strong><br><span style="font-size:12px;color:#555;">${how}</span><br><span style="font-size:12px;">${status}</span></div>
+      <button onclick="markCashCare('${id}')" style="flex-shrink:0;background:#f0f0f0;color:#333;">Done</button>
+    </div>
+  </div>`;
+}
+
+const cashOpenGuide = new Set();
+
+function renderCash() {
+  const weekIdx = parseInt(localStorage.getItem('cashWeek')) || 0;
+  const finished = weekIdx >= CASH_WEEKS.length;
+  const week = CASH_WEEKS[Math.min(weekIdx, CASH_WEEKS.length - 1)];
+  const date = cashDate();
+  const monday = parseDate(getMondayOfWeek(date));
+  const weekDates = Array.from({ length: 7 }, (_, i) => {
+    const day = new Date(monday);
+    day.setDate(day.getDate() + i);
+    return toDateStr(day);
+  });
+  const setup = cashRead('cashSetup', {});
+  const allSetup = CASH_SETUP_GROUPS.flatMap(g => g[1]);
+  const setupDone = allSetup.filter(([id]) => setup[id]).length;
+
+  let html = `
+    <h2>Cash's Training</h2>
+    <div class="card card-blue">
+      <h3 style="margin-top:0;">${finished ? 'All 6 weeks finished' : `Week ${weekIdx + 1} of ${CASH_WEEKS.length}`}</h3>
+      ${finished
+        ? '<p style="font-size:14px;margin-bottom:8px;">Keep the routine going. Go back a week any time he needs a refresher.</p>'
+        : `<div style="font-size:14px;line-height:1.5;margin-bottom:10px;">
+            <p><strong>Door:</strong> ${week.door}</p>
+            <p><strong>Reactivity:</strong> ${week.react}</p>
+            <p><strong>Walks:</strong> ${week.walks}</p>
+            <p><strong>Chewing / alone time:</strong> ${week.alone}</p>
+          </div>
+          <p style="font-size:13px;color:#555;margin-bottom:8px;">Move on when he gets each step right about 4 out of 5 tries. If not, repeat the week.</p>`}
+      <div class="mini-row" style="flex-wrap:wrap;">
+        <button class="mini" onclick="cashStepper('cashWeek', -1, ${CASH_WEEKS.length})">← Back a week</button>
+        <button class="mini" onclick="cashStepper('cashWeek', 1, ${CASH_WEEKS.length})">He's ready, next week →</button>
+      </div>
+    </div>
+
+    ${cashWalkCard()}
+
+    <div class="card">
+      <h3 style="margin-top:0;">Weekly checklist</h3>
+      <p style="font-size:13px;color:#555;margin-bottom:8px;">Tap a box on each day you did it. His daily times are on the Routine tab.</p>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead><tr><th></th>${weekDates.map((dt, i) => `<th style="padding:2px;font-size:11px;${dt === date ? 'color:#2196f3;' : ''}">${'MTWTFSS'[i]}</th>`).join('')}</tr></thead>
+        <tbody>${CASH_WEEKLY_ITEMS.map(([id, label]) => `<tr>
+          <td style="padding:6px 4px 6px 0;border-top:1px solid #eee;">${label}</td>
+          ${weekDates.map(dt => {
+            const on = !!cashRead(`cashWeekly_${dt}`, {})[id];
+            return `<td style="padding:2px;border-top:1px solid #eee;text-align:center;"><button onclick="toggleCashWeekly('${dt}', '${id}')" aria-label="${label} on ${dt}" style="width:28px;height:28px;padding:0;font-size:13px;background:${on ? '#4caf50' : '#f0f0f0'};color:#fff;">${on ? '✓' : ''}</button></td>`;
+          }).join('')}
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0;">Regular care</h3>
+      ${CASH_CARE.map(cashCareRow).join('')}
+    </div>
+
+    <details class="card" data-guide="setup" ontoggle="cashGuideToggle(this)" ${cashOpenGuide.has('setup') ? 'open' : ''}>
+      <summary><strong>Setup and supplies</strong> (${setupDone} of ${allSetup.length})</summary>
+      ${CASH_SETUP_GROUPS.map(([title, items]) => `<h4 style="margin:12px 0 6px;">${title}</h4>
+        ${items.map(([id, label]) => `<label style="display:flex;gap:8px;align-items:flex-start;font-weight:normal;font-size:14px;margin-bottom:8px;"><input type="checkbox" ${setup[id] ? 'checked' : ''} onchange="toggleCashSetup('${id}')" style="margin-top:3px;"> <span>${label}</span></label>`).join('')}`).join('')}
+    </details>
+
+    <h3>The plan</h3>
+    ${CASH_GUIDE.map(([title, body], i) => `<details class="card cash-guide" data-guide="g${i}" ontoggle="cashGuideToggle(this)" ${cashOpenGuide.has('g' + i) ? 'open' : ''}><summary><strong>${title}</strong></summary>${body}</details>`).join('')}
+  `;
+
+  document.getElementById('cashView').innerHTML = html;
+  ['routineView', 'trackingView', 'projectsView', 'workoutsView'].forEach(id => document.getElementById(id).classList.add('hidden'));
+  document.getElementById('cashView').classList.remove('hidden');
+}
+
+function cashGuideToggle(el) {
+  if (el.open) cashOpenGuide.add(el.dataset.guide);
+  else cashOpenGuide.delete(el.dataset.guide);
+}
+
+function cashTrackingCard(date, weekStart, monthStart, yearStart, daysInMonth, daysInYear) {
+  const row = (name, week, month, year) => `<div style="font-size:16px;margin-bottom:10px;padding:8px;background:#f0f0f0;border-radius:4px;"><strong>${name}</strong><br>${week} | ${month} | ${year}</div>`;
+  const items = CASH_WEEKLY_ITEMS.map(([id, label]) => {
+    const did = dt => cashRead(`cashWeekly_${dt}`, {})[id] ? 1 : 0;
+    const count = start => sumOverRange(did, start, date);
+    return row(label, `Weekly: ${count(weekStart)}/7`, `Monthly: ${count(monthStart)}/${daysInMonth}`, `Annual: ${count(yearStart)}/${daysInYear}`);
+  }).join('');
+  const walked = start => sumOverRange(cashWalkMinutes, start, date);
+  return `
+    <div class="card">
+      <h3>Cash</h3>
+      <p style="font-size:14px;color:#555;margin-bottom:8px;">His daily tasks are under Scheduled Trackables above. Tick these on the Cash tab.</p>
+      ${row('Minutes walked with Cash', `Weekly: ${walked(weekStart)}`, `Monthly: ${walked(monthStart)}`, `Annual: ${walked(yearStart)}`)}
+      ${items}
+    </div>`;
 }
 
 function getProjectHoursForDate(proj, dateStr) {
@@ -1163,6 +1498,7 @@ function renderWorkouts() {
   let html = `<h2>Workout Components</h2>
     <p style="margin-bottom:20px;font-size:15px;color:#666;">Track each component individually. Target: 6 reps/week per component.</p>`;
   
+  html += cashWalkCard();
   html += '<h3>Daily Tracking</h3>';
   ['A', 'B', 'C'].forEach(type => {
     html += `
