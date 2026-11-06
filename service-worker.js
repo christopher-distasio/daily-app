@@ -1,4 +1,4 @@
-const CACHE_NAME = 'best-life-tracker-v4';
+const CACHE_NAME = 'best-life-tracker-v5';
 const PRECACHE_URLS = [
   '/',
   '/index.html',

@@ -87,6 +87,8 @@
         <button onclick="setView('cash')">🐕 Cash</button>
       </div>
       
+      <div id="syncBox" style="margin-top:10px;"></div>
+
       <div class="grid-2" style="margin-top: 10px;">
         <button class="btn-success" onclick="exportData()">⬇️ Export Data</button>
         <label style="background: #2196f3; color: #fff; padding: 10px; border-radius: 6px; cursor: pointer; text-align: center; margin: 0;">
@@ -104,6 +106,229 @@
   </div>
 
   <script>
+// ---- Live sync ----
+// Every localStorage write is noticed here, so the app's own code stays unchanged. Each key
+// syncs as a unit, newest timestamp wins. sync* keys belong to this device and never leave it.
+const SYNC_URL = 'https://best-life-sync.cadistasio.workers.dev';
+const rawGetItem = Storage.prototype.getItem;
+const rawSetItem = Storage.prototype.setItem;
+const rawRemoveItem = Storage.prototype.removeItem;
+const syncGet = k => rawGetItem.call(localStorage, k);
+const syncSet = (k, v) => rawSetItem.call(localStorage, k, v);
+const syncRemove = k => rawRemoveItem.call(localStorage, k);
+const isDeviceOnlyKey = k => /^sync/.test(k);
+
+function syncReadDirty() {
+  try { return JSON.parse(syncGet('syncDirty')) || {}; } catch (e) { return {}; }
+}
+
+let syncDebounce;
+function syncMarkDirty(key, ts = Date.now()) {
+  if (!syncGet('syncCode') || isDeviceOnlyKey(key)) return;
+  const dirty = syncReadDirty();
+  dirty[key] = ts;
+  syncSet('syncDirty', JSON.stringify(dirty));
+  clearTimeout(syncDebounce);
+  syncDebounce = setTimeout(syncNow, 1500);
+}
+
+Storage.prototype.setItem = function (key, value) {
+  if (this !== localStorage) return rawSetItem.call(this, key, value);
+  const before = syncGet(key);
+  syncSet(key, value);
+  // saveData rewrites many unchanged keys; only real changes may claim a new timestamp.
+  if (String(value) !== before) syncMarkDirty(key);
+};
+
+Storage.prototype.removeItem = function (key) {
+  if (this !== localStorage) return rawRemoveItem.call(this, key);
+  const existed = syncGet(key) !== null;
+  syncRemove(key);
+  if (existed) syncMarkDirty(key);
+};
+
+async function syncPost(path, code, body) {
+  const res = await fetch(SYNC_URL + path, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${code}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {})
+  });
+  if (res.status === 401) throw new Error('unauthorized');
+  if (!res.ok) throw new Error(`server ${res.status}`);
+  return res.json();
+}
+
+let syncBusy = false;
+let syncAgain = false;
+let syncStatus = '';
+
+async function syncNow() {
+  const code = syncGet('syncCode');
+  if (!code) return;
+  if (syncBusy) { syncAgain = true; return; }
+  syncBusy = true;
+  let changed = false;
+  try {
+    for (let round = 0; round < 1000; round++) {
+      const sent = syncReadDirty();
+      const keys = Object.keys(sent).slice(0, 200);
+      const changes = keys.map(key => {
+        const value = syncGet(key);
+        return { key, value, ts: sent[key], deleted: value === null };
+      });
+      const cursor = parseInt(syncGet('syncCursor')) || 0;
+      const res = await syncPost('/sync', code, { cursor, changes });
+
+      // Re-read: edits made during the request must stay queued for the next round.
+      const dirty = syncReadDirty();
+      keys.forEach(k => { if (dirty[k] === sent[k]) delete dirty[k]; });
+      res.rows.forEach(row => {
+        if (isDeviceOnlyKey(row.key)) return;
+        if (dirty[row.key] >= row.ts) return;
+        delete dirty[row.key];
+        const next = row.deleted ? null : row.value;
+        if (syncGet(row.key) === next) return;
+        if (next === null) syncRemove(row.key); else syncSet(row.key, next);
+        changed = true;
+      });
+      syncSet('syncDirty', JSON.stringify(dirty));
+      syncSet('syncCursor', res.cursor);
+      if (!res.more && Object.keys(dirty).length === 0) break;
+    }
+    syncStatus = `Synced ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+  } catch (e) {
+    syncStatus = e.message === 'unauthorized'
+      ? 'Sync code not accepted. Disconnect and enter it again.'
+      : 'Offline. Your changes are saved here and will sync when you reconnect.';
+  }
+  syncBusy = false;
+  if (changed) syncRefreshApp();
+  renderSyncBox();
+  if (syncAgain) { syncAgain = false; syncNow(); }
+}
+
+function syncUserIsTyping() {
+  const el = document.activeElement;
+  return !!el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
+}
+
+let syncRenderPending = false;
+
+// Reload memory from storage, or the next save would write the old values back over the new ones.
+function syncRefreshApp() {
+  CHECKLIST = loadChecklist();
+  rebuildRoutine();
+  const active = state.activeProject;
+  const runningTimers = state.timerRunning ? { ...state.projectTimers } : null;
+  loadData(document.getElementById('currentDate').value);
+  state.activeProject = active;
+  if (runningTimers) state.projectTimers = runningTimers;
+  state.bedTime = localStorage.getItem('bedTime') || state.bedTime;
+  document.getElementById('bedTime').value = state.bedTime;
+  document.getElementById('wakeTime').value = localStorage.getItem('wakeTime') || '08:00';
+  if (syncUserIsTyping()) syncRenderPending = true;
+  else render();
+}
+
+document.addEventListener('focusout', () => setTimeout(() => {
+  if (syncRenderPending && !syncUserIsTyping()) {
+    syncRenderPending = false;
+    render();
+  }
+}, 0));
+
+let syncPendingCode = null;
+
+async function syncConnect(code) {
+  code = (code || '').trim();
+  if (!code) return;
+  syncStatus = 'Checking code...';
+  renderSyncBox();
+  try {
+    const { total } = await syncPost('/status', code);
+    if (total === 0) return syncFinishJoin(code, 'device');
+    syncPendingCode = code;
+    syncStatus = '';
+  } catch (e) {
+    syncStatus = e.message === 'unauthorized' ? 'That sync code was not accepted.' : 'Could not reach the sync service. Check your connection and try again.';
+  }
+  renderSyncBox();
+}
+
+function syncAskForCode() {
+  const code = prompt('Enter your sync code:');
+  if (code) syncConnect(code);
+}
+
+// 'device': this device's values are stamped newest, so they replace the online copy.
+// 'online': they're stamped oldest, so online values win and only keys it lacks get uploaded.
+function syncFinishJoin(code, winner) {
+  if (syncPendingCode) exportData(); // Something is about to be replaced, so keep a file first.
+  syncPendingCode = null;
+  const ts = winner === 'device' ? Date.now() : 1;
+  const dirty = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!isDeviceOnlyKey(key)) dirty[key] = ts;
+  }
+  syncSet('syncDirty', JSON.stringify(dirty));
+  syncSet('syncCursor', '0');
+  syncSet('syncCode', code);
+  syncStatus = 'Syncing...';
+  renderSyncBox();
+  syncNow();
+}
+
+function syncDisconnect() {
+  if (!confirm('Turn off sync on this device? Your data stays here, and other devices keep their copies.')) return;
+  ['syncCode', 'syncCursor', 'syncDirty'].forEach(syncRemove);
+  syncStatus = '';
+  renderSyncBox();
+}
+
+function renderSyncBox() {
+  const box = document.getElementById('syncBox');
+  if (!box) return;
+  if (syncPendingCode) {
+    box.innerHTML = `
+      <div class="card card-orange" style="margin:0;">
+        <strong>Connect this device: which data is the real one?</strong>
+        <p style="font-size:13px;margin:6px 0 10px;">An online copy already exists. A backup file of this device saves first either way.</p>
+        <button class="btn-success" style="width:100%;margin-bottom:8px;" onclick="syncFinishJoin(syncPendingCode, 'online')">Use the online copy (for a new device)</button>
+        <button class="btn-primary" style="width:100%;margin-bottom:8px;" onclick="syncFinishJoin(syncPendingCode, 'device')">Use this device's data (replaces the online copy)</button>
+        <button style="width:100%;background:#f0f0f0;" onclick="syncPendingCode=null;renderSyncBox();">Cancel</button>
+      </div>`;
+    return;
+  }
+  if (!syncGet('syncCode')) {
+    box.innerHTML = `<button style="width:100%;background:#f0f0f0;" onclick="syncAskForCode()">🔄 Turn on sync</button>${syncStatus ? `<div style="font-size:13px;margin-top:6px;color:#c62828;">${escapeHtml(syncStatus)}</div>` : ''}`;
+    return;
+  }
+  box.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;">
+      <span>🔄 ${escapeHtml(syncStatus || 'Sync on')}</span>
+      <span class="mini-row">
+        <button class="mini" onclick="syncNow()">Sync now</button>
+        <button class="mini" onclick="syncDisconnect()">Disconnect</button>
+      </span>
+    </div>`;
+}
+
+function syncStart() {
+  renderSyncBox();
+  const fromLink = /^#sync=(.+)$/.exec(location.hash);
+  if (fromLink) {
+    // Clear the code from the address bar and history straight away.
+    history.replaceState(null, '', location.pathname + location.search);
+    if (syncGet('syncCode') !== decodeURIComponent(fromLink[1])) syncConnect(decodeURIComponent(fromLink[1]));
+  }
+  syncNow();
+  setInterval(() => { if (document.visibilityState === 'visible') syncNow(); }, 20000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncNow(); });
+  window.addEventListener('focus', syncNow);
+  window.addEventListener('online', syncNow);
+}
+
 const VERSES = [
   { text: "For God hath not given us the spirit of fear; but of power, and of love, and of a sound mind.", reference: "2 Timothy 1:7", id: 1 },
   { text: "I can do all things through Christ which strengtheneth me.", reference: "Philippians 4:13", id: 2 },
@@ -697,6 +922,7 @@ function exportData() {
   const backup = {};
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
+    if (isDeviceOnlyKey(key)) continue; // The sync code must never end up in a backup file
     backup[key] = localStorage.getItem(key);
   }
   const date = document.getElementById('currentDate').value;
@@ -717,6 +943,7 @@ function importData(e) {
     try {
       const backup = JSON.parse(event.target.result);
       Object.entries(backup).forEach(([key, value]) => {
+        if (isDeviceOnlyKey(key)) return;
         localStorage.setItem(key, value);
       });
       if (!('cashPlanV1' in backup)) localStorage.removeItem('cashPlanV1');
@@ -1536,6 +1763,7 @@ function renderWorkouts() {
 }
 
 init();
+syncStart();
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/service-worker.js').then(reg => {
