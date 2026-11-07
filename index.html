@@ -239,8 +239,15 @@ document.addEventListener('focusout', () => setTimeout(() => {
 
 let syncPendingCode = null;
 
-async function syncConnect(code) {
-  code = (code || '').trim();
+// Phones capitalize words and turn hyphens into long dashes; only the letters and numbers matter.
+function syncCleanCode(raw) {
+  const trimmed = (raw || '').trim();
+  const bare = trimmed.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return bare.length === 25 ? bare.match(/.{5}/g).join('-') : trimmed;
+}
+
+async function syncConnect(rawCode) {
+  const code = syncCleanCode(rawCode);
   if (!code) return;
   syncStatus = 'Checking code...';
   renderSyncBox();
@@ -250,7 +257,10 @@ async function syncConnect(code) {
     syncPendingCode = code;
     syncStatus = '';
   } catch (e) {
-    syncStatus = e.message === 'unauthorized' ? 'That sync code was not accepted.' : 'Could not reach the sync service. Check your connection and try again.';
+    const count = code.replace(/[^a-zA-Z0-9]/g, '').length;
+    syncStatus = e.message === 'unauthorized'
+      ? `That sync code was not accepted. It had ${count} letters and numbers; it should have 25.`
+      : `Could not reach the sync service (${e.message}). Check your connection, or turn off any ad blocker or VPN, and try again.`;
   }
   renderSyncBox();
 }
