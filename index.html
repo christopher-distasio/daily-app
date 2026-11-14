@@ -50,6 +50,7 @@
     .hydration-buttons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px; }
     .hydration-buttons button { padding: 8px; font-size: 12px; }
     .hidden { display: none; }
+    .home-btn { position: fixed; right: 16px; bottom: 16px; z-index: 50; width: 56px; height: 56px; border-radius: 50%; background: #333; color: #fff; font-size: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
     .mini-row { display: flex; gap: 4px; }
     .mini { padding: 4px 10px; font-size: 13px; background: #f0f0f0; color: #333; }
     details.card summary { cursor: pointer; font-size: 15px; }
@@ -105,6 +106,7 @@
     <div id="workoutsView" class="hidden"></div>
     <div id="cashView" class="hidden"></div>
     <div id="bedView" class="hidden"></div>
+    <button class="home-btn" onclick="goHome()" title="Home">🏠</button>
   </div>
 
   <script>
@@ -438,6 +440,15 @@ function addCashTasksOnce() {
   localStorage.setItem('cashPlanV1', '1');
 }
 
+// Everything after 8:00 PM now lives in the Bed tab's schedules. Runs once; the flag
+// keeps it from undoing anything added back by hand later.
+function moveNightToBedOnce() {
+  if (localStorage.getItem('bedMoveV1')) return;
+  CHECKLIST = CHECKLIST.filter(b => clockToMinutes(b.time) <= 20 * 60);
+  localStorage.setItem('checklist', JSON.stringify(CHECKLIST));
+  localStorage.setItem('bedMoveV1', '1');
+}
+
 function saveChecklist() {
   localStorage.setItem('checklist', JSON.stringify(CHECKLIST));
   rebuildRoutine();
@@ -468,6 +479,7 @@ const ANYTIME_ROUTINE = {
   foodLog: { name: 'Log food', trackable: true, scheduled: false },
 };
 addCashTasksOnce();
+moveNightToBedOnce();
 rebuildRoutine();
 
 const ANYTIME_ORDER = ['cashActivity', 'stretchMobility', 'workoutA', 'workoutB', 'workoutC', 'cardio', 'foodLog'];
@@ -751,9 +763,13 @@ function saveState() {
 
 function setView(view) {
   state.view = view;
-  document.querySelectorAll('.view-tabs button').forEach(b => b.classList.remove('active'));
-  event.target.classList.add('active');
+  document.querySelectorAll('.view-tabs button').forEach(b => b.classList.toggle('active', b.getAttribute('onclick') === `setView('${view}')`));
   render();
+}
+
+function goHome() {
+  setView('routine');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function toggleStep(key) {
@@ -959,6 +975,7 @@ function importData(e) {
         localStorage.setItem(key, value);
       });
       if (!('cashPlanV1' in backup)) localStorage.removeItem('cashPlanV1');
+      if (!('bedMoveV1' in backup)) localStorage.removeItem('bedMoveV1');
       alert('Data restored. Refreshing...');
       location.reload();
     } catch (err) {
@@ -1066,6 +1083,7 @@ function renderRoutine() {
     `;
   });
 
+  html += `<button onclick="setView('bed');window.scrollTo(0,0);" style="width:100%;margin-bottom:15px;background:#1a237e;color:#fff;padding:14px;font-size:15px;">🌙 After 8:00 PM: open tonight's bed schedule</button>`;
   html += `
     <div class="card" style="border-left:6px solid #4caf50;">
       <h3 style="margin-top:0;">+ New Time</h3>
@@ -1593,20 +1611,24 @@ const BED_PRE = [
 ];
 const BED_STEPS = {
   regular: [
-    { id: 'tv_pray', t: 'TV off. Pray with Susan.', min: 5, link: ['c_tv_off', 'c_nightly_prayer_together'] },
+    { id: 'susan_pill', t: 'Susan has taken her pill.', min: 1 },
+    { id: 'thermostat', t: 'Set the thermostat and start the diffuser.', min: 2 },
+    { id: 'tv_pray', t: 'TV off. Pray with Susan.', min: 5, link: ['c_tv_off'] },
     { id: 'cuddle', t: 'Into bed with Susan and cuddle until she falls asleep.', min: 20, link: ['c_in_bed_with_susan_cuddle_until_she_is_as'] },
     { id: 'pack1_on', t: 'Cold pack on, round 1.', min: 1, pack: 'on' },
     { id: 'teeth', t: 'Brush teeth.', min: 3, link: ['c_teeth_brushed'] },
+    { id: 'groom', t: 'Grooming and skincare.', min: 4 },
     { id: 'cpap', t: 'Check your CPAP mask and hose.', min: 2, link: ['c_cpap_mask_and_hose_checked'] },
-    { id: 'setout', t: 'Set out tomorrow.', min: 4, link: ['c_tomorrow_clothes_set_out_etc_'] },
+    { id: 'setout', t: 'Set out tomorrow (clothes, etc.).', min: 4, link: ['c_tomorrow_clothes_set_out_etc_'] },
     { id: 'recorder', t: "Put the recorder and notebook within arm's reach of the bed.", min: 1 },
     { id: 'plan', t: 'Plan tomorrow: read your top three tasks and picture the first hour going well.', min: 2 },
     { id: 'card', t: "Write tonight's incubation question on a card. Read it three times and hold one concrete image.", min: 3 },
     { id: 'audio', t: 'Queue your bedtime calm audio.', min: 2 },
     { id: 'pack1_off', t: 'Cold pack off.', min: 1, pack: 'off' },
+    { id: 'cash_out', t: 'Let Cash out back one last time. Leash up high, snacks and trash away.', min: 3 },
     { id: 'bathroom', t: 'Last bathroom trip, then phone to its charger across the room.', min: 3, link: ['c_last_bathroom_trip'] },
     { id: 'inbed', t: 'Into bed, mask on, lights low.', min: 1 },
-    { id: 'calm', t: 'Start the calm audio on a sleep timer that ends around 9:25. Use a speaker, or start it before the phone goes across the room.', min: 1 },
+    { id: 'calm', t: 'Start the calm audio on a sleep timer that ends around lights out. Use a speaker, or start it before the phone goes across the room.', min: 1 },
     { id: 'god', t: "Time with God: what you're grateful for, where you saw good, what to let go of, one hope for tomorrow, and the \"Why am I suffering\" meditation.", min: 10 },
     { id: 'breathe', t: 'Slow breathing: in for 4, out for 6 to 8.', min: 5 },
     { id: 'pack2_on', t: 'Cold pack on, round 2.', min: 1, pack: 'on' },
@@ -1616,12 +1638,14 @@ const BED_STEPS = {
     { id: 'lights_out', t: 'Lights out. Repeat the question silently as you drift.', min: 0, lights: true, link: ['c_be_in_bed_mask_on_lights_off_audio_off'] }
   ],
   bath: [
-    { id: 'tv_pray', t: 'TV off. Pray with Susan.', min: 5, link: ['c_tv_off', 'c_nightly_prayer_together'] },
+    { id: 'susan_pill', t: 'Susan has taken her pill.', min: 1 },
+    { id: 'thermostat', t: 'Set the thermostat and start the diffuser.', min: 2 },
+    { id: 'tv_pray', t: 'TV off. Pray with Susan.', min: 5, link: ['c_tv_off'] },
     { id: 'cuddle', t: 'Into bed with Susan and cuddle until she falls asleep.', min: 20, link: ['c_in_bed_with_susan_cuddle_until_she_is_as'] },
     { id: 'pack1_on', t: 'Cold pack on, round 1.', min: 1, pack: 'on' },
     { id: 'teeth', t: 'Brush teeth.', min: 3, link: ['c_teeth_brushed'] },
     { id: 'cpap', t: 'Check your CPAP mask and hose.', min: 2, link: ['c_cpap_mask_and_hose_checked'] },
-    { id: 'setout', t: 'Set out tomorrow.', min: 4, link: ['c_tomorrow_clothes_set_out_etc_'] },
+    { id: 'setout', t: 'Set out tomorrow (clothes, etc.).', min: 4, link: ['c_tomorrow_clothes_set_out_etc_'] },
     { id: 'recorder', t: "Put the recorder and notebook within arm's reach of the bed.", min: 1 },
     { id: 'card_bag', t: "Write tonight's incubation question on a card and put it in a zip bag so it can come into the tub.", min: 3 },
     { id: 'audio_both', t: "Queue your bath audio (tied to tonight's question) and your bedtime calm audio.", min: 3 },
@@ -1634,10 +1658,11 @@ const BED_STEPS = {
       { id: 'breathe', t: 'Slow breathing: in for 4, out for 6 to 8.', min: 5 },
       { id: 'soak', t: 'Soak, then drain.', min: 2 }
     ] },
-    { id: 'skincare', t: 'Skincare.', min: 4, link: ['c_any_bathing_grooming_skincare'] },
+    { id: 'skincare', t: 'Grooming and skincare.', min: 4, link: ['c_any_bathing_grooming_skincare'] },
+    { id: 'cash_out', t: 'Let Cash out back one last time. Leash up high, snacks and trash away.', min: 3 },
     { id: 'bathroom', t: 'Last bathroom trip, then phone to its charger across the room.', min: 3, link: ['c_last_bathroom_trip'] },
     { id: 'inbed', t: 'Into bed, mask on, lights low.', min: 1 },
-    { id: 'calm', t: 'Start the calm audio on a sleep timer that ends around 9:37.', min: 1 },
+    { id: 'calm', t: 'Start the calm audio on a sleep timer that ends around lights out.', min: 1 },
     { id: 'pack2_on', t: 'Cold pack on, round 2.', min: 1, pack: 'on' },
     { id: 'scan', t: 'Body scan, toes to face.', min: 15 },
     { id: 'pack2_off', t: 'Cold pack off and off the bed.', min: 2, pack: 'off' },
@@ -1764,7 +1789,8 @@ function renderBed() {
     <details class="card cash-guide"><summary><strong>Rules and tips</strong></summary>
       <h4>Cold pack</h4><p>Wrap it in a thin towel. Keep each round to 15 to 20 minutes, leave at least 20 minutes between rounds, and never fall asleep with it on.</p>
       <h4>Throughout</h4><p>When a thought shows up, label it softly ("thinking") and come back to your breath. If Susan takes longer to fall asleep, the times after it shift on their own.</p>
-      <h4>Bath night</h4><p>The bath only adds about 12 minutes, because the 25-minute bath block absorbs planning, the card, Time with God and slow breathing. For a 30-minute soak, settle in for 10 minutes; lights out moves to about 9:42.</p>
+      <h4>From the old checklist</h4><p>Susan's pill, thermostat, diffuser, grooming, Cash's last trip out and the evening practice now live here instead of on the Daily checklist.</p>
+      <h4>Bath night</h4><p>The bath only adds about 12 minutes, because the 25-minute bath block absorbs planning, the card, Time with God and slow breathing. For a 30-minute soak, settle in for 10 minutes; lights out moves about 5 minutes later.</p>
     </details>`;
   document.getElementById('bedView').innerHTML = html;
   ['routineView', 'trackingView', 'projectsView', 'workoutsView', 'cashView'].forEach(id => document.getElementById(id).classList.add('hidden'));
