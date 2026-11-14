@@ -412,14 +412,13 @@ function loadChecklist() {
 // reused; otherwise a new block goes in time order. The flag stops a deleted task
 // from coming back. Item keys are fixed so completion history lines up.
 const CASH_DAILY_TASKS = [
-  { time: '8:00 AM', tag: 'done by', key: 'c_cash_out_morning', t: 'Let Cash out back' },
   { time: '8:15 AM', tag: 'done by', key: 'c_cash_breakfast', t: 'Cash breakfast: bowl down 15 minutes, then pick it up (save a handful for training)' },
   { time: '9:30 AM', tag: 'start by', key: 'c_cash_exercise', t: 'Dog park with Cash (fixed leash, no toys). Sore-back day: "Find it" in the yard instead' },
   { time: '10:15 AM', tag: 'done by', key: 'c_cash_training_am', t: 'Cash training, 10 min: door "Stay" and "Leave it"' },
-  { time: '12:00 PM', tag: 'done by', key: 'c_cash_out_noon', t: 'Let Cash out back + a few minutes of "Find it"' },
+  { time: '12:00 PM', tag: 'done by', key: 'c_cash_out_noon', t: 'A few minutes of "Find it" with Cash' },
   { time: '5:00 PM', tag: 'start by', key: 'c_cash_dinner', t: 'Cash dinner: bowl down 15 minutes, then pick it up' },
   { time: '5:30 PM', tag: 'done by', key: 'c_cash_training_pm', t: 'Cash training, 10 min: "With me" and "Look at that"' },
-  { time: '9:30 PM', tag: 'done by', key: 'c_cash_out_night', t: 'Let Cash out back one last time. Leash up high, snacks and trash away' }
+  { time: '9:30 PM', tag: 'done by', key: 'c_cash_out_night', t: 'Leash up high, snacks and trash away' }
 ];
 
 function addCashTasksOnce() {
@@ -447,6 +446,19 @@ function moveNightToBedOnce() {
   CHECKLIST = CHECKLIST.filter(b => clockToMinutes(b.time) <= 20 * 60);
   localStorage.setItem('checklist', JSON.stringify(CHECKLIST));
   localStorage.setItem('bedMoveV1', '1');
+}
+
+// Cash has the yard, so the "let him out" tasks are gone. The noon one keeps its
+// "Find it" part under the same key so its history lines up.
+function dropCashOutOnce() {
+  if (localStorage.getItem('cashOutV1')) return;
+  CHECKLIST.forEach(b => {
+    b.items = b.items.filter(it => it.key !== 'c_cash_out_morning' && it.key !== 'c_cash_out_night');
+    b.items.forEach(it => { if (it.key === 'c_cash_out_noon') it.t = 'A few minutes of "Find it" with Cash'; });
+  });
+  CHECKLIST = CHECKLIST.filter(b => b.items.length);
+  localStorage.setItem('checklist', JSON.stringify(CHECKLIST));
+  localStorage.setItem('cashOutV1', '1');
 }
 
 function saveChecklist() {
@@ -480,6 +492,7 @@ const ANYTIME_ROUTINE = {
 };
 addCashTasksOnce();
 moveNightToBedOnce();
+dropCashOutOnce();
 rebuildRoutine();
 
 const ANYTIME_ORDER = ['cashActivity', 'stretchMobility', 'workoutA', 'workoutB', 'workoutC', 'cardio', 'foodLog'];
@@ -976,6 +989,7 @@ function importData(e) {
       });
       if (!('cashPlanV1' in backup)) localStorage.removeItem('cashPlanV1');
       if (!('bedMoveV1' in backup)) localStorage.removeItem('bedMoveV1');
+      if (!('cashOutV1' in backup)) localStorage.removeItem('cashOutV1');
       alert('Data restored. Refreshing...');
       location.reload();
     } catch (err) {
@@ -1625,7 +1639,7 @@ const BED_STEPS = {
     { id: 'card', t: "Write tonight's incubation question on a card. Read it three times and hold one concrete image.", min: 3 },
     { id: 'audio', t: 'Queue your bedtime calm audio.', min: 2 },
     { id: 'pack1_off', t: 'Cold pack off.', min: 1, pack: 'off' },
-    { id: 'cash_out', t: 'Let Cash out back one last time. Leash up high, snacks and trash away.', min: 3 },
+    { id: 'cash_out', t: 'Leash up high, snacks and trash away.', min: 1 },
     { id: 'bathroom', t: 'Last bathroom trip, then phone to its charger across the room.', min: 3, link: ['c_last_bathroom_trip'] },
     { id: 'inbed', t: 'Into bed, mask on, lights low.', min: 1 },
     { id: 'calm', t: 'Start the calm audio on a sleep timer that ends around lights out. Use a speaker, or start it before the phone goes across the room.', min: 1 },
@@ -1659,7 +1673,7 @@ const BED_STEPS = {
       { id: 'soak', t: 'Soak, then drain.', min: 2 }
     ] },
     { id: 'skincare', t: 'Grooming and skincare.', min: 4, link: ['c_any_bathing_grooming_skincare'] },
-    { id: 'cash_out', t: 'Let Cash out back one last time. Leash up high, snacks and trash away.', min: 3 },
+    { id: 'cash_out', t: 'Leash up high, snacks and trash away.', min: 1 },
     { id: 'bathroom', t: 'Last bathroom trip, then phone to its charger across the room.', min: 3, link: ['c_last_bathroom_trip'] },
     { id: 'inbed', t: 'Into bed, mask on, lights low.', min: 1 },
     { id: 'calm', t: 'Start the calm audio on a sleep timer that ends around lights out.', min: 1 },
@@ -1789,7 +1803,7 @@ function renderBed() {
     <details class="card cash-guide"><summary><strong>Rules and tips</strong></summary>
       <h4>Cold pack</h4><p>Wrap it in a thin towel. Keep each round to 15 to 20 minutes, leave at least 20 minutes between rounds, and never fall asleep with it on.</p>
       <h4>Throughout</h4><p>When a thought shows up, label it softly ("thinking") and come back to your breath. If Susan takes longer to fall asleep, the times after it shift on their own.</p>
-      <h4>From the old checklist</h4><p>Susan's pill, thermostat, diffuser, grooming, Cash's last trip out and the evening practice now live here instead of on the Daily checklist.</p>
+      <h4>From the old checklist</h4><p>Susan's pill, thermostat, diffuser, grooming, putting the leash up and snacks away and the evening practice now live here instead of on the Daily checklist.</p>
       <h4>Bath night</h4><p>The bath only adds about 12 minutes, because the 25-minute bath block absorbs planning, the card, Time with God and slow breathing. For a 30-minute soak, settle in for 10 minutes; lights out moves about 5 minutes later.</p>
     </details>`;
   document.getElementById('bedView').innerHTML = html;
