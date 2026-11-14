@@ -221,6 +221,7 @@ let syncRenderPending = false;
 // Reload memory from storage, or the next save would write the old values back over the new ones.
 function syncRefreshApp() {
   CHECKLIST = loadChecklist();
+  cleanChecklist();
   rebuildRoutine();
   const active = state.activeProject;
   const runningTimers = state.timerRunning ? { ...state.projectTimers } : null;
@@ -439,26 +440,25 @@ function addCashTasksOnce() {
   localStorage.setItem('cashPlanV1', '1');
 }
 
-// Everything after 8:00 PM now lives in the Bed tab's schedules. Runs once; the flag
-// keeps it from undoing anything added back by hand later.
-function moveNightToBedOnce() {
-  if (localStorage.getItem('bedMoveV1')) return;
-  CHECKLIST = CHECKLIST.filter(b => clockToMinutes(b.time) <= 20 * 60);
-  localStorage.setItem('checklist', JSON.stringify(CHECKLIST));
-  localStorage.setItem('bedMoveV1', '1');
-}
-
-// Cash has the yard, so the "let him out" tasks are gone. The noon one keeps its
-// "Find it" part under the same key so its history lines up.
-function dropCashOutOnce() {
-  if (localStorage.getItem('cashOutV1')) return;
+// Everything after 8:00 PM lives in the Bed tab, and Cash has the yard, so those tasks
+// are removed by key. This checks the list itself (not a one-time flag), so an old list
+// that comes back through sync or an old open tab gets cleaned again. Tasks added by
+// hand are never touched. Writes only when something changed.
+const RETIRED_KEYS = new Set([
+  'c_susan_has_taken_her_pill', 'c_nightly_prayer_together', 'c_in_bed_with_susan_cuddle_until_she_is_as',
+  'c_set_thermostat', 'c_diffuser', 'c_15_minutes_why_am_i_suffering_prayer_min', 'c_teeth_brushed',
+  'c_cpap_mask_and_hose_checked', 'c_tomorrow_clothes_set_out_etc_', 'c_cash_out_night', 'c_cash_out_morning',
+  'c_any_bathing_grooming_skincare', 'c_last_bathroom_trip', 'c_be_in_bed_mask_on_lights_off_audio_off',
+  'c_evening_practice_started_reflection_slow'
+]);
+function cleanChecklist() {
+  const before = JSON.stringify(CHECKLIST);
   CHECKLIST.forEach(b => {
-    b.items = b.items.filter(it => it.key !== 'c_cash_out_morning' && it.key !== 'c_cash_out_night');
-    b.items.forEach(it => { if (it.key === 'c_cash_out_noon') it.t = 'A few minutes of "Find it" with Cash'; });
+    b.items = b.items.filter(it => !RETIRED_KEYS.has(it.key));
+    b.items.forEach(it => { if (it.key === 'c_cash_out_noon' && /let cash out/i.test(it.t)) it.t = 'A few minutes of "Find it" with Cash'; });
   });
   CHECKLIST = CHECKLIST.filter(b => b.items.length);
-  localStorage.setItem('checklist', JSON.stringify(CHECKLIST));
-  localStorage.setItem('cashOutV1', '1');
+  if (JSON.stringify(CHECKLIST) !== before) localStorage.setItem('checklist', JSON.stringify(CHECKLIST));
 }
 
 function saveChecklist() {
@@ -491,8 +491,7 @@ const ANYTIME_ROUTINE = {
   foodLog: { name: 'Log food', trackable: true, scheduled: false },
 };
 addCashTasksOnce();
-moveNightToBedOnce();
-dropCashOutOnce();
+cleanChecklist();
 rebuildRoutine();
 
 const ANYTIME_ORDER = ['cashActivity', 'stretchMobility', 'workoutA', 'workoutB', 'workoutC', 'cardio', 'foodLog'];
@@ -988,8 +987,6 @@ function importData(e) {
         localStorage.setItem(key, value);
       });
       if (!('cashPlanV1' in backup)) localStorage.removeItem('cashPlanV1');
-      if (!('bedMoveV1' in backup)) localStorage.removeItem('bedMoveV1');
-      if (!('cashOutV1' in backup)) localStorage.removeItem('cashOutV1');
       alert('Data restored. Refreshing...');
       location.reload();
     } catch (err) {
