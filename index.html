@@ -28,7 +28,7 @@
     .btn-success { background: #4caf50; color: #fff; }
     .btn-info { background: #2196f3; color: #fff; }
     .btn-danger { background: #f44336; color: #fff; }
-    .view-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px; margin-bottom: 10px; }
+    .view-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 10px; margin-bottom: 10px; }
     .view-tabs button { width: 100%; padding: 10px 2px; font-size: 13px; }
     .view-tabs button.active { background: #333; color: #fff; }
     .view-tabs button:not(.active) { background: #999; color: #fff; }
@@ -86,6 +86,7 @@
         <button onclick="setView('projects')">⏱️ Projects</button>
         <button onclick="setView('workouts')">💪 Workouts</button>
         <button onclick="setView('cash')">🐕 Cash</button>
+        <button onclick="setView('morning')">🌅 Morning</button>
         <button onclick="setView('bed')">🌙 Bed</button>
       </div>
       
@@ -105,6 +106,7 @@
     <div id="projectsView" class="hidden"></div>
     <div id="workoutsView" class="hidden"></div>
     <div id="cashView" class="hidden"></div>
+    <div id="morningView" class="hidden"></div>
     <div id="bedView" class="hidden"></div>
     <button class="home-btn" onclick="goHome()" title="Home">🏠</button>
   </div>
@@ -449,13 +451,34 @@ const RETIRED_KEYS = new Set([
   'c_set_thermostat', 'c_diffuser', 'c_15_minutes_why_am_i_suffering_prayer_min', 'c_teeth_brushed',
   'c_cpap_mask_and_hose_checked', 'c_tomorrow_clothes_set_out_etc_', 'c_cash_out_night', 'c_cash_out_morning',
   'c_any_bathing_grooming_skincare', 'c_last_bathroom_trip', 'c_be_in_bed_mask_on_lights_off_audio_off',
-  'c_evening_practice_started_reflection_slow'
+  'c_evening_practice_started_reflection_slow',
+  // Morning, now in the Morning tab
+  'c_out_of_bed_no_snoozing_', 'c_cpap_numbers_checked_ahi_leak_hours_', 'c_last_night_logged',
+  'c_dream_work_reconnoitering', 'c_aleve_taken', 'c_bright_lights_on', 'c_cash_breakfast',
+  'c_heat_pad_round_1_started', 'c_outside_with_coffee_or_water', 'c_water_the_seeds', 'c_stretching',
+  'c_pets_treated', 'c_breath_of_fire_and_breathing_exercises', 'c_time_with_god_5_min_',
+  'c_mind_control_10_min_max_grounding_why_am', 'c_heat_pad_off_20_minute_break_', 'c_drinks_and_yogurt_prepped',
+  'c_heat_pad_round_2_started', 'c_eaten', 'c_pills_taken', 'c_cash_has_his_supplement', 'c_heat_pad_off'
 ]);
+// Every heat or cold mention reads "Hot/Cold". Safe to run again on its own output.
+function hotColdText(t) {
+  if (!/heat|hot|cold|🥶/i.test(t)) return t;
+  return t
+    .replace(/^[\s\/]+/, '')
+    .replace(/(?:heat|hot)?\s*\/?\s*(?:🥶)?\s*(?:cold)?\s*\b(?:pad|pack)(s?)\b/gi, (m, pl) => /heat|hot|cold|🥶/i.test(m) ? 'Hot/Cold pack' + pl : m)
+    .replace(/\bHEAT (ON|OFF)\b/g, 'HOT/COLD $1')
+    .replace(/\bno heat\b/gi, 'no hot/cold')
+    .replace(/\b(\d+ min) heat\b/gi, '$1 hot/cold');
+}
+
 function cleanChecklist() {
   const before = JSON.stringify(CHECKLIST);
   CHECKLIST.forEach(b => {
     b.items = b.items.filter(it => !RETIRED_KEYS.has(it.key));
-    b.items.forEach(it => { if (it.key === 'c_cash_out_noon' && /let cash out/i.test(it.t)) it.t = 'A few minutes of "Find it" with Cash'; });
+    b.items.forEach(it => {
+      if (it.key === 'c_cash_out_noon' && /let cash out/i.test(it.t)) it.t = 'A few minutes of "Find it" with Cash';
+      it.t = hotColdText(it.t);
+    });
   });
   CHECKLIST = CHECKLIST.filter(b => b.items.length);
   if (JSON.stringify(CHECKLIST) !== before) localStorage.setItem('checklist', JSON.stringify(CHECKLIST));
@@ -1002,9 +1025,11 @@ function render() {
   else if (state.view === 'projects') renderProjects();
   else if (state.view === 'workouts') renderWorkouts();
   else if (state.view === 'cash') renderCash();
-  else if (state.view === 'bed') renderBed();
+  else if (state.view === 'morning') renderSched('am');
+  else if (state.view === 'bed') renderSched('bed');
   if (state.view !== 'cash') document.getElementById('cashView').classList.add('hidden');
   if (state.view !== 'bed') document.getElementById('bedView').classList.add('hidden');
+  if (state.view !== 'morning') document.getElementById('morningView').classList.add('hidden');
 }
 
 function renderRoutine() {
@@ -1034,6 +1059,7 @@ function renderRoutine() {
     </div>
     
     <h2>Daily Checklist</h2>
+    <button onclick="setView('morning');window.scrollTo(0,0);" style="width:100%;margin-bottom:15px;background:#e65100;color:#fff;padding:14px;font-size:15px;">🌅 8:00 to 9:30 AM: open this morning's routine</button>
   `;
   
 
@@ -1070,7 +1096,7 @@ function renderRoutine() {
           const bg = done ? '#e8f5e9' : (it.heat === 'on' ? '#fff3e0' : it.heat === 'off' ? '#e3f2fd' : '#fff');
           return `<div class="step ${done ? 'done' : ''}" style="background:${bg};margin-bottom:6px;padding:10px;">
             <div class="step-header" style="align-items:center;gap:10px;">
-              <div style="font-size:14px;${it.heat ? 'font-weight:bold;' : ''}">${it.heat === 'on' ? '🔥 ' : it.heat === 'off' ? '❄️ ' : ''}${escapeHtml(it.t)}${it.fixed ? ' <span style="color:#c62828;font-size:11px;font-weight:bold;">FIXED</span>' : ''}${it.date ? ' <span style="color:#666;font-size:11px;">this date only</span>' : ''}</div>
+              <div style="font-size:14px;${it.heat ? 'font-weight:bold;' : ''}">${it.heat === 'on' ? '🔥❄️ ' : it.heat === 'off' ? '⏸️ ' : ''}${escapeHtml(it.t)}${it.fixed ? ' <span style="color:#c62828;font-size:11px;font-weight:bold;">FIXED</span>' : ''}${it.date ? ' <span style="color:#666;font-size:11px;">this date only</span>' : ''}</div>
               <button onclick="toggleStep('${it.key}')" style="flex-shrink:0;background:${done ? '#4caf50' : '#f0f0f0'};color:${done ? '#fff' : '#333'};">${done ? '✓' : 'Mark'}</button>
             </div>
             <div class="mini-row" style="margin-top:6px;">
@@ -1271,7 +1297,8 @@ function renderTracking() {
     </div>
 
     ${cashTrackingCard(date, weekStart, monthStart, yearStart, daysInMonth, daysInYear)}
-    ${bedTrackingCard(date, weekStart, monthStart, yearStart, daysInMonth, daysInYear)}
+    ${schedTrackingCard('am', date, weekStart, monthStart, yearStart, daysInMonth, daysInYear)}
+    ${schedTrackingCard('bed', date, weekStart, monthStart, yearStart, daysInMonth, daysInYear)}
 
     <div class="card">
       <h3>Workout Components (Weekly Goal: 6 each)</h3>
@@ -1611,126 +1638,197 @@ function cashTrackingCard(date, weekStart, monthStart, yearStart, daysInMonth, d
     </div>`;
 }
 
-// ---- Bed schedule ----
-// Stored per night as bed_<date> = { mode: 'regular'|'bath', done: { stepId: timestampMs } }.
-// It's read from storage on every render, so sync needs no extra reload step.
-// link: Routine checklist item key ticked along with the step. pack: cold pack on/off.
-// lights: lights-out time becomes that date's bedtime in sleep tracking.
-const BED_PRE = [
-  { id: 'pre_liquids', t: 'Liquids stopped by 5:30 PM (sips only after)', time: '5:30 PM' },
-  { id: 'pre_food', t: 'Food done by 6:30 PM', time: '6:30 PM' }
-];
-const BED_STEPS = {
-  regular: [
-    { id: 'susan_pill', t: 'Susan has taken her pill.', min: 1 },
-    { id: 'thermostat', t: 'Set the thermostat and start the diffuser.', min: 2 },
-    { id: 'tv_pray', t: 'TV off. Pray with Susan.', min: 5, link: ['c_tv_off'] },
-    { id: 'cuddle', t: 'Into bed with Susan and cuddle until she falls asleep.', min: 20, link: ['c_in_bed_with_susan_cuddle_until_she_is_as'] },
-    { id: 'pack1_on', t: 'Cold pack on, round 1.', min: 1, pack: 'on' },
-    { id: 'teeth', t: 'Brush teeth.', min: 3, link: ['c_teeth_brushed'] },
-    { id: 'groom', t: 'Grooming and skincare.', min: 4 },
-    { id: 'cpap', t: 'Check your CPAP mask and hose.', min: 2, link: ['c_cpap_mask_and_hose_checked'] },
-    { id: 'setout', t: 'Set out tomorrow (clothes, etc.).', min: 4, link: ['c_tomorrow_clothes_set_out_etc_'] },
-    { id: 'recorder', t: "Put the recorder and notebook within arm's reach of the bed.", min: 1 },
-    { id: 'plan', t: 'Plan tomorrow: read your top three tasks and picture the first hour going well.', min: 2 },
-    { id: 'card', t: "Write tonight's incubation question on a card. Read it three times and hold one concrete image.", min: 3 },
-    { id: 'audio', t: 'Queue your bedtime calm audio.', min: 2 },
-    { id: 'pack1_off', t: 'Cold pack off.', min: 1, pack: 'off' },
-    { id: 'cash_out', t: 'Leash up high, snacks and trash away.', min: 1 },
-    { id: 'bathroom', t: 'Last bathroom trip, then phone to its charger across the room.', min: 3, link: ['c_last_bathroom_trip'] },
-    { id: 'inbed', t: 'Into bed, mask on, lights low.', min: 1 },
-    { id: 'calm', t: 'Start the calm audio on a sleep timer that ends around lights out. Use a speaker, or start it before the phone goes across the room.', min: 1 },
-    { id: 'god', t: "Time with God: what you're grateful for, where you saw good, what to let go of, one hope for tomorrow, and the \"Why am I suffering\" meditation.", min: 10 },
-    { id: 'breathe', t: 'Slow breathing: in for 4, out for 6 to 8.', min: 5 },
-    { id: 'pack2_on', t: 'Cold pack on, round 2.', min: 1, pack: 'on' },
-    { id: 'scan', t: 'Body scan, toes to face, softening each area.', min: 15 },
-    { id: 'pack2_off', t: 'Cold pack off and off the bed.', min: 2, pack: 'off' },
-    { id: 'plant', t: 'Plant the question: picture it, repeat it slowly on 3 to 5 exhales, then say "I\'ll remember what comes to me in the morning." Add "Next time I\'m dreaming, I\'ll notice I\'m dreaming."', min: 2 },
-    { id: 'lights_out', t: 'Lights out. Repeat the question silently as you drift.', min: 0, lights: true, link: ['c_be_in_bed_mask_on_lights_off_audio_off'] }
-  ],
-  bath: [
-    { id: 'susan_pill', t: 'Susan has taken her pill.', min: 1 },
-    { id: 'thermostat', t: 'Set the thermostat and start the diffuser.', min: 2 },
-    { id: 'tv_pray', t: 'TV off. Pray with Susan.', min: 5, link: ['c_tv_off'] },
-    { id: 'cuddle', t: 'Into bed with Susan and cuddle until she falls asleep.', min: 20, link: ['c_in_bed_with_susan_cuddle_until_she_is_as'] },
-    { id: 'pack1_on', t: 'Cold pack on, round 1.', min: 1, pack: 'on' },
-    { id: 'teeth', t: 'Brush teeth.', min: 3, link: ['c_teeth_brushed'] },
-    { id: 'cpap', t: 'Check your CPAP mask and hose.', min: 2, link: ['c_cpap_mask_and_hose_checked'] },
-    { id: 'setout', t: 'Set out tomorrow (clothes, etc.).', min: 4, link: ['c_tomorrow_clothes_set_out_etc_'] },
-    { id: 'recorder', t: "Put the recorder and notebook within arm's reach of the bed.", min: 1 },
-    { id: 'card_bag', t: "Write tonight's incubation question on a card and put it in a zip bag so it can come into the tub.", min: 3 },
-    { id: 'audio_both', t: "Queue your bath audio (tied to tonight's question) and your bedtime calm audio.", min: 3 },
-    { id: 'pack1_off', t: 'Cold pack off.', min: 1, pack: 'off' },
-    { group: 'Warm bath block. Do these in the tub, in order.', items: [
-      { id: 'settle', t: 'Settle in and let the audio play. (10 min for a 30-minute soak)', min: 5 },
-      { id: 'plan', t: 'Plan tomorrow: picture your top three tasks and the first hour going well.', min: 2 },
-      { id: 'card_read', t: 'Read the card three times and hold the image.', min: 1 },
-      { id: 'god', t: 'Time with God, including the "Why am I suffering" meditation.', min: 10 },
-      { id: 'breathe', t: 'Slow breathing: in for 4, out for 6 to 8.', min: 5 },
-      { id: 'soak', t: 'Soak, then drain.', min: 2 }
-    ] },
-    { id: 'skincare', t: 'Grooming and skincare.', min: 4, link: ['c_any_bathing_grooming_skincare'] },
-    { id: 'cash_out', t: 'Leash up high, snacks and trash away.', min: 1 },
-    { id: 'bathroom', t: 'Last bathroom trip, then phone to its charger across the room.', min: 3, link: ['c_last_bathroom_trip'] },
-    { id: 'inbed', t: 'Into bed, mask on, lights low.', min: 1 },
-    { id: 'calm', t: 'Start the calm audio on a sleep timer that ends around lights out.', min: 1 },
-    { id: 'pack2_on', t: 'Cold pack on, round 2.', min: 1, pack: 'on' },
-    { id: 'scan', t: 'Body scan, toes to face.', min: 15 },
-    { id: 'pack2_off', t: 'Cold pack off and off the bed.', min: 2, pack: 'off' },
-    { id: 'plant', t: 'Plant the question and the lucid intention.', min: 2 },
-    { id: 'lights_out', t: 'Lights out. Repeat the question silently as you drift.', min: 0, lights: true, link: ['c_be_in_bed_mask_on_lights_off_audio_off'] }
-  ]
+// ---- Morning and Bed schedules ----
+// Stored per day as am_<date> and bed_<date> = { mode, done: { stepId: timestampMs } }.
+// Read from storage on every render, so sync needs no extra reload step.
+// Step flags: link = Routine item key ticked along with it; pack = Hot/Cold pack on/off;
+// wake / lights = feeds sleep tracking (sleep for a date is the night before it).
+const SCHEDS = {
+  am: {
+    title: 'Morning Routine', view: 'morningView', start: 8 * 60,
+    modes: [['regular', '☀️ Regular morning'], ['bath', '🛁 Bath morning']],
+    pre: [],
+    finish: 'pack2_off', anchor: 'out_of_bed', anchorLabel: 'out of bed',
+    steps: {}
+  },
+  bed: {
+    title: 'Bed Schedule', view: 'bedView', start: 20 * 60,
+    modes: [['regular', '🛏️ Regular night'], ['bath', '🛁 Bath night']],
+    pre: [
+      { id: 'pre_liquids', t: 'Liquids stopped by 5:30 PM (sips only after)', time: '5:30 PM' },
+      { id: 'pre_food', t: 'Food done by 6:30 PM', time: '6:30 PM' }
+    ],
+    finish: 'lights_out', anchor: 'lights_out', anchorLabel: 'lights out',
+    steps: {}
+  }
 };
-const BED_START = 20 * 60;
 
-function bedRead(date) {
-  try { const v = JSON.parse(localStorage.getItem(`bed_${date}`)); if (v && v.done) return v; } catch (e) {}
+const AM_START = [
+  { id: 'out_of_bed', t: 'Out of bed (no snoozing)', min: 2, wake: true },
+  { id: 'lights', t: 'Bright lights on', min: 1 },
+  { id: 'pack1_on', t: 'Hot/Cold pack on, round 1.', min: 1, pack: 'on' },
+  { id: 'cpap', t: 'CPAP numbers checked (AHI, leak, hours)', min: 2 },
+  { id: 'log', t: 'Last night logged', min: 3 },
+  { id: 'dream', t: 'Dream work / reconnoitering', min: 5 },
+  { id: 'aleve', t: 'Aleve taken', min: 1 },
+  { id: 'cash_bf', t: 'Cash breakfast: bowl down 15 minutes, then pick it up (save a handful for training)', min: 2 },
+  { id: 'outside', t: 'Outside with coffee or water', min: 5 },
+  { id: 'pack1_off', t: 'Hot/Cold pack off (at least a 20-minute break).', min: 1, pack: 'off' },
+  { id: 'seeds', t: 'Water the seeds', min: 3 }
+];
+const AM_END = [
+  { id: 'pack2_on', t: 'Hot/Cold pack on, round 2.', min: 1, pack: 'on' },
+  { id: 'drinks', t: 'Drinks and yogurt prepped', min: 3 },
+  { id: 'eaten', t: 'Eaten', min: 10 },
+  { id: 'pills', t: 'Pills taken', min: 1 },
+  { id: 'cash_supp', t: 'Cash has his supplement', min: 1 },
+  { id: 'pack2_off', t: 'Hot/Cold pack off. Next up: dog park with Cash at 9:30.', min: 1, pack: 'off' }
+];
+SCHEDS.am.steps.regular = [
+  ...AM_START,
+  { id: 'stretch', t: 'Stretching', min: 5 },
+  { id: 'pets', t: 'Pets treated', min: 2 },
+  { id: 'breath', t: 'Breath of fire and breathing exercises', min: 5 },
+  { id: 'god', t: 'Time with God (5 min)', min: 5 },
+  { id: 'mind', t: 'Mind control (10 min max): grounding, "Why am I suffering" meditation', min: 10 },
+  ...AM_END
+];
+SCHEDS.am.steps.bath = [
+  ...AM_START,
+  { id: 'pets', t: 'Pets treated', min: 2 },
+  { group: 'Warm bath. Do these in the tub, in order.', items: [
+    { id: 'settle', t: 'Settle in.', min: 2 },
+    { id: 'breath', t: 'Breath of fire and breathing exercises', min: 5 },
+    { id: 'god', t: 'Time with God (5 min)', min: 5 },
+    { id: 'mind', t: 'Mind control (10 min max): grounding, "Why am I suffering" meditation', min: 10 },
+    { id: 'shave', t: 'Shave.', min: 5 },
+    { id: 'skincare', t: 'Skincare.', min: 4 },
+    { id: 'drain', t: 'Drain and dry off.', min: 3 }
+  ] },
+  { id: 'stretch', t: 'Stretching (your muscles are warm now)', min: 5 },
+  ...AM_END
+];
+
+SCHEDS.bed.steps.regular = [
+  { id: 'susan_pill', t: 'Susan has taken her pill.', min: 1 },
+  { id: 'thermostat', t: 'Set the thermostat and start the diffuser.', min: 2 },
+  { id: 'tv_pray', t: 'TV off. Pray with Susan.', min: 5, link: ['c_tv_off'] },
+  { id: 'cuddle', t: 'Into bed with Susan and cuddle until she falls asleep.', min: 20 },
+  { id: 'pack1_on', t: 'Hot/Cold pack on, round 1.', min: 1, pack: 'on' },
+  { id: 'teeth', t: 'Brush teeth.', min: 3 },
+  { id: 'groom', t: 'Grooming and skincare.', min: 4 },
+  { id: 'cpap', t: 'Check your CPAP mask and hose.', min: 2 },
+  { id: 'setout', t: 'Set out tomorrow (clothes, etc.).', min: 4 },
+  { id: 'recorder', t: "Put the recorder and notebook within arm's reach of the bed.", min: 1 },
+  { id: 'plan', t: 'Plan tomorrow: read your top three tasks and picture the first hour going well.', min: 2 },
+  { id: 'card', t: "Write tonight's incubation question on a card. Read it three times and hold one concrete image.", min: 3 },
+  { id: 'audio', t: 'Queue your bedtime calm audio.', min: 2 },
+  { id: 'pack1_off', t: 'Hot/Cold pack off.', min: 1, pack: 'off' },
+  { id: 'cash_out', t: 'Leash up high, snacks and trash away.', min: 1 },
+  { id: 'bathroom', t: 'Last bathroom trip, then phone to its charger across the room.', min: 3 },
+  { id: 'inbed', t: 'Into bed, mask on, lights low.', min: 1 },
+  { id: 'calm', t: 'Start the calm audio on a sleep timer that ends around lights out. Use a speaker, or start it before the phone goes across the room.', min: 1 },
+  { id: 'god', t: "Time with God: what you're grateful for, where you saw good, what to let go of, one hope for tomorrow, and the \"Why am I suffering\" meditation.", min: 10 },
+  { id: 'breathe', t: 'Slow breathing: in for 4, out for 6 to 8.', min: 5 },
+  { id: 'pack2_on', t: 'Hot/Cold pack on, round 2.', min: 1, pack: 'on' },
+  { id: 'scan', t: 'Body scan, toes to face, softening each area.', min: 15 },
+  { id: 'pack2_off', t: 'Hot/Cold pack off and off the bed.', min: 2, pack: 'off' },
+  { id: 'plant', t: 'Plant the question: picture it, repeat it slowly on 3 to 5 exhales, then say "I\'ll remember what comes to me in the morning." Add "Next time I\'m dreaming, I\'ll notice I\'m dreaming."', min: 2 },
+  { id: 'lights_out', t: 'Lights out. Repeat the question silently as you drift.', min: 0, lights: true }
+];
+SCHEDS.bed.steps.bath = [
+  { id: 'susan_pill', t: 'Susan has taken her pill.', min: 1 },
+  { id: 'thermostat', t: 'Set the thermostat and start the diffuser.', min: 2 },
+  { id: 'tv_pray', t: 'TV off. Pray with Susan.', min: 5, link: ['c_tv_off'] },
+  { id: 'cuddle', t: 'Into bed with Susan and cuddle until she falls asleep.', min: 20 },
+  { id: 'pack1_on', t: 'Hot/Cold pack on, round 1.', min: 1, pack: 'on' },
+  { id: 'teeth', t: 'Brush teeth.', min: 3 },
+  { id: 'cpap', t: 'Check your CPAP mask and hose.', min: 2 },
+  { id: 'setout', t: 'Set out tomorrow (clothes, etc.).', min: 4 },
+  { id: 'recorder', t: "Put the recorder and notebook within arm's reach of the bed.", min: 1 },
+  { id: 'card_bag', t: "Write tonight's incubation question on a card and put it in a zip bag so it can come into the tub.", min: 3 },
+  { id: 'audio_both', t: "Queue your bath audio (tied to tonight's question) and your bedtime calm audio.", min: 3 },
+  { id: 'pack1_off', t: 'Hot/Cold pack off.', min: 1, pack: 'off' },
+  { group: 'Warm bath block. Do these in the tub, in order.', items: [
+    { id: 'settle', t: 'Settle in and let the audio play. (10 min for a 30-minute soak)', min: 5 },
+    { id: 'plan', t: 'Plan tomorrow: picture your top three tasks and the first hour going well.', min: 2 },
+    { id: 'card_read', t: 'Read the card three times and hold the image.', min: 1 },
+    { id: 'god', t: 'Time with God, including the "Why am I suffering" meditation.', min: 10 },
+    { id: 'breathe', t: 'Slow breathing: in for 4, out for 6 to 8.', min: 5 },
+    { id: 'soak', t: 'Soak, then drain.', min: 2 }
+  ] },
+  { id: 'skincare', t: 'Grooming and skincare.', min: 4 },
+  { id: 'cash_out', t: 'Leash up high, snacks and trash away.', min: 1 },
+  { id: 'bathroom', t: 'Last bathroom trip, then phone to its charger across the room.', min: 3 },
+  { id: 'inbed', t: 'Into bed, mask on, lights low.', min: 1 },
+  { id: 'calm', t: 'Start the calm audio on a sleep timer that ends around lights out.', min: 1 },
+  { id: 'pack2_on', t: 'Hot/Cold pack on, round 2.', min: 1, pack: 'on' },
+  { id: 'scan', t: 'Body scan, toes to face.', min: 15 },
+  { id: 'pack2_off', t: 'Hot/Cold pack off and off the bed.', min: 2, pack: 'off' },
+  { id: 'plant', t: 'Plant the question and the lucid intention.', min: 2 },
+  { id: 'lights_out', t: 'Lights out. Repeat the question silently as you drift.', min: 0, lights: true }
+];
+
+const PACK_RULES = '<h4>Hot/Cold pack</h4><p>Wrap it in a thin towel. Keep each round to 15 to 20 minutes, leave at least 20 minutes between rounds, and never fall asleep with it on.</p>';
+SCHEDS.am.tips = PACK_RULES + `
+  <h4>Bath morning</h4><p>Breathing, Time with God, mind control, shaving and skincare all happen in the tub, so a bath morning runs about 14 minutes longer and still finishes before the 9:30 dog park.</p>
+  <h4>Sleep tracking</h4><p>Checking "Out of bed" saves today's wake time.</p>`;
+SCHEDS.bed.tips = PACK_RULES + `
+  <h4>Throughout</h4><p>When a thought shows up, label it softly ("thinking") and come back to your breath. If Susan takes longer to fall asleep, the times after it shift on their own.</p>
+  <h4>From the old checklist</h4><p>Susan's pill, thermostat, diffuser, grooming and putting the leash up and snacks away now live here instead of on the Daily checklist.</p>
+  <h4>Bath night</h4><p>The bath only adds about 12 minutes, because the 25-minute bath block absorbs planning, the card, Time with God and slow breathing. For a 30-minute soak, settle in for 10 minutes; lights out moves about 5 minutes later.</p>
+  <h4>Sleep tracking</h4><p>Checking "Lights out" saves tomorrow's bedtime (sleep for a date is the night before it).</p>`;
+
+function schedRead(kind, date) {
+  try { const v = JSON.parse(localStorage.getItem(`${kind}_${date}`)); if (v && v.done) return v; } catch (e) {}
   return { mode: 'regular', done: {} };
 }
-function bedWrite(date, v) { localStorage.setItem(`bed_${date}`, JSON.stringify(v)); }
-function bedFlat(mode) { return BED_STEPS[mode].flatMap(s => s.group ? s.items : [s]); }
+function schedWrite(kind, date, v) { localStorage.setItem(`${kind}_${date}`, JSON.stringify(v)); }
+function schedFlat(kind, mode) { return SCHEDS[kind].steps[mode].flatMap(s => s.group ? s.items : [s]); }
 function bedClock(mins) { mins = Math.round(mins); return formatClock(`${Math.floor(mins / 60) % 24}:${String(mins % 60).padStart(2, '0')}`); }
 function bedMinsOf(ts, date) {
   const d = new Date(ts);
   if (toDateStr(d) !== date) return null;
   return d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60;
 }
+function hhmmOf(ts) { const d = new Date(ts); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; }
+function nextDateStr(date) { const d = parseDate(date); d.setDate(d.getDate() + 1); return toDateStr(d); }
 
-function setBedMode(mode) {
+function setSchedMode(kind, mode) {
   const date = cashDate();
-  const v = bedRead(date);
+  const v = schedRead(kind, date);
   v.mode = mode;
-  bedWrite(date, v);
+  schedWrite(kind, date, v);
   render();
 }
 
-function toggleBedStep(id) {
+function toggleSchedStep(kind, id) {
   const date = cashDate();
-  const v = bedRead(date);
-  const step = [...BED_PRE, ...bedFlat(v.mode)].find(s => s.id === id);
+  const v = schedRead(kind, date);
+  const step = [...SCHEDS[kind].pre, ...schedFlat(kind, v.mode)].find(s => s.id === id);
   const nowDone = !v.done[id];
   if (nowDone) v.done[id] = Date.now(); else delete v.done[id];
-  bedWrite(date, v);
-  // Tick (or untick) the matching Routine items, if they still exist there.
+  schedWrite(kind, date, v);
   if (step && step.link) {
     step.link.forEach(k => { if (ROUTINE[k]) state.completed[k] = nowDone; });
     saveData(date);
   }
-  if (step && step.lights && nowDone) {
-    const d = new Date(v.done[id]);
-    const bed = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-    const wake = localStorage.getItem(`sleepWake_${date}`) || '';
-    updateSleepTimes(date, bed, wake);
+  if (step && nowDone && step.lights) {
+    const night = nextDateStr(date);
+    updateSleepTimes(night, hhmmOf(v.done[id]), localStorage.getItem(`sleepWake_${night}`) || '');
+  }
+  if (step && nowDone && step.wake) {
+    updateSleepTimes(date, localStorage.getItem(`sleepBed_${date}`) || '', hhmmOf(v.done[id]));
   }
   render();
 }
 
 // Planned start times follow what actually happened: after each checked step, the
-// rest of the night shifts to start from when it was checked.
-function bedSchedule(mode, done, date) {
+// rest shifts to start from when it was checked.
+function schedTimes(kind, mode, done, date) {
   const out = {};
-  let cursor = BED_START;
-  bedFlat(mode).forEach(s => {
+  let cursor = SCHEDS[kind].start;
+  schedFlat(kind, mode).forEach(s => {
     out[s.id] = cursor;
     const at = done[s.id] ? bedMinsOf(done[s.id], date) : null;
     cursor = at !== null ? at : cursor + s.min;
@@ -1738,8 +1836,8 @@ function bedSchedule(mode, done, date) {
   return out;
 }
 
-function bedPackStatus(mode, done) {
-  const steps = bedFlat(mode).filter(s => s.pack && done[s.id]).sort((a, b) => done[a.id] - done[b.id]);
+function packStatus(kind, mode, done) {
+  const steps = schedFlat(kind, mode).filter(s => s.pack && done[s.id]).sort((a, b) => done[a.id] - done[b.id]);
   const last = steps[steps.length - 1];
   if (!last) return '';
   const mins = Math.floor((Date.now() - done[last.id]) / 60000);
@@ -1747,91 +1845,90 @@ function bedPackStatus(mode, done) {
   if (last.pack === 'on') {
     const color = mins >= 20 ? '#c62828' : mins >= 15 ? '#ef6c00' : '#1565c0';
     const msg = mins >= 20 ? 'Take it off now.' : mins >= 15 ? 'Time to take it off soon (15 to 20 min max).' : 'Keep it to 15 to 20 minutes.';
-    return `<div class="card" style="border-left:6px solid ${color};background:#e3f2fd;"><strong>❄️ Cold pack on for ${mins} min.</strong> ${msg}</div>`;
+    return `<div class="card" style="border-left:6px solid ${color};background:#fff3e0;"><strong>🔥❄️ Hot/Cold pack on for ${mins} min.</strong> ${msg}</div>`;
   }
   const ready = mins >= 20;
-  return `<div class="card" style="border-left:6px solid ${ready ? '#2e7d32' : '#999'};"><strong>❄️ Cold pack off for ${mins} min.</strong> ${ready ? 'OK to start the next round.' : `Next round OK in ${20 - mins} min.`}</div>`;
+  return `<div class="card" style="border-left:6px solid ${ready ? '#2e7d32' : '#999'};"><strong>⏸️ Hot/Cold pack off for ${mins} min.</strong> ${ready ? 'OK to start the next round.' : `Next round OK in ${20 - mins} min.`}</div>`;
 }
 
-function bedStepRow(s, v, sched) {
+function schedStepRow(kind, s, v, times) {
   const done = !!v.done[s.id];
-  const when = done ? `done ${bedClock(new Date(v.done[s.id]).getHours() * 60 + new Date(v.done[s.id]).getMinutes())}` : (sched ? bedClock(sched[s.id]) : s.time);
-  const bg = done ? '#e8f5e9' : s.pack === 'on' ? '#e3f2fd' : s.pack === 'off' ? '#f5f5f5' : '#fff';
+  const d = done ? new Date(v.done[s.id]) : null;
+  const when = done ? `done ${bedClock(d.getHours() * 60 + d.getMinutes())}` : (times ? bedClock(times[s.id]) : s.time);
+  const bg = done ? '#e8f5e9' : s.pack === 'on' ? '#fff3e0' : s.pack === 'off' ? '#f5f5f5' : '#fff';
+  const icon = s.pack === 'on' ? '🔥❄️ ' : s.pack === 'off' ? '⏸️ ' : s.lights ? '🌙 ' : s.wake ? '☀️ ' : '';
   return `<div class="step ${done ? 'done' : ''}" style="background:${bg};margin-bottom:6px;padding:10px;">
     <div class="step-header" style="align-items:center;gap:10px;">
-      <div style="font-size:14px;"><span style="font-size:12px;color:#555;font-weight:bold;">${when}${s.min ? ` · ${s.min} min` : ''}</span><br>${s.pack ? '❄️ ' : ''}${s.lights ? '🌙 ' : ''}${escapeHtml(s.t)}</div>
-      <button onclick="toggleBedStep('${s.id}')" style="flex-shrink:0;background:${done ? '#4caf50' : '#f0f0f0'};color:${done ? '#fff' : '#333'};">${done ? '✓' : 'Mark'}</button>
+      <div style="font-size:14px;"><span style="font-size:12px;color:#555;font-weight:bold;">${when}${s.min ? ` · ${s.min} min` : ''}</span><br>${icon}${escapeHtml(s.t)}</div>
+      <button onclick="toggleSchedStep('${kind}', '${s.id}')" style="flex-shrink:0;background:${done ? '#4caf50' : '#f0f0f0'};color:${done ? '#fff' : '#333'};">${done ? '✓' : 'Mark'}</button>
     </div></div>`;
 }
 
-function renderBed() {
+function renderSched(kind) {
+  const cfg = SCHEDS[kind];
   const date = cashDate();
-  const v = bedRead(date);
-  const flat = bedFlat(v.mode);
-  const sched = bedSchedule(v.mode, v.done, date);
+  const v = schedRead(kind, date);
+  const flat = schedFlat(kind, v.mode);
+  const times = schedTimes(kind, v.mode, v.done, date);
   const doneCount = flat.filter(s => v.done[s.id]).length;
-  const btn = (m, label) => `<button onclick="setBedMode('${m}')" style="background:${v.mode === m ? '#333' : '#ddd'};color:${v.mode === m ? '#fff' : '#333'};">${label}</button>`;
+  const btn = ([m, label]) => `<button onclick="setSchedMode('${kind}', '${m}')" style="background:${v.mode === m ? '#333' : '#ddd'};color:${v.mode === m ? '#fff' : '#333'};">${label}</button>`;
   let html = `
-    <h2>Bed Schedule</h2>
-    <div class="grid-2" style="margin-bottom:10px;">${btn('regular', '🛏️ Regular night')}${btn('bath', '🛁 Bath night')}</div>
+    <h2>${cfg.title}</h2>
+    <div class="grid-2" style="margin-bottom:10px;">${cfg.modes.map(btn).join('')}</div>
     <div class="card card-blue" style="position:sticky;top:0;z-index:5;">
       <strong>${doneCount} of ${flat.length} done</strong>
       <div class="progress-bar"><div class="progress-fill" style="width:${(doneCount / flat.length) * 100}%"></div></div>
-      <div style="font-size:12px;color:#555;margin-top:6px;">Times shift on their own: each step starts from when you checked the one before it. Lights out also saves your bedtime to sleep tracking.</div>
+      <div style="font-size:12px;color:#555;margin-top:6px;">Times shift on their own: each step starts from when you checked the one before it.</div>
     </div>
-    <div id="bedPack">${bedPackStatus(v.mode, v.done)}</div>
+    <div id="packStatus_${kind}">${packStatus(kind, v.mode, v.done)}</div>`;
+  if (cfg.pre.length) html += `
     <div class="card" style="border-left:6px solid #8b7355;">
       <strong style="font-size:17px;">Before 8:00 PM</strong>
-      ${BED_PRE.map(s => bedStepRow(s, v, null)).join('')}
+      ${cfg.pre.map(s => schedStepRow(kind, s, v, null)).join('')}
     </div>`;
-  BED_STEPS[v.mode].forEach(s => {
+  cfg.steps[v.mode].forEach(s => {
     if (s.group) {
       const n = s.items.filter(i => v.done[i.id]).length;
       const total = s.items.reduce((a, i) => a + i.min, 0);
       html += `<div class="card" style="border-left:6px solid #2196f3;${n === s.items.length ? 'opacity:0.65;background:#f1f8f1;' : ''}">
-        <div style="margin-bottom:8px;"><strong style="font-size:17px;">${bedClock(sched[s.items[0].id])}</strong> <span style="font-size:12px;color:#555;">🛁 ${total} min · ${n}/${s.items.length}</span><br><span style="font-size:14px;">${escapeHtml(s.group)}</span></div>
-        ${s.items.map(i => bedStepRow(i, v, sched)).join('')}
+        <div style="margin-bottom:8px;"><strong style="font-size:17px;">${bedClock(times[s.items[0].id])}</strong> <span style="font-size:12px;color:#555;">🛁 ${total} min · ${n}/${s.items.length}</span><br><span style="font-size:14px;">${escapeHtml(s.group)}</span></div>
+        ${s.items.map(i => schedStepRow(kind, i, v, times)).join('')}
       </div>`;
     } else {
-      html += `<div class="card" style="border-left:6px solid ${s.lights ? '#c62828' : '#2196f3'};padding:8px;">${bedStepRow(s, v, sched)}</div>`;
+      html += `<div class="card" style="border-left:6px solid ${s.lights || s.wake ? '#c62828' : '#2196f3'};padding:8px;">${schedStepRow(kind, s, v, times)}</div>`;
     }
   });
-  html += `
-    <details class="card cash-guide"><summary><strong>Rules and tips</strong></summary>
-      <h4>Cold pack</h4><p>Wrap it in a thin towel. Keep each round to 15 to 20 minutes, leave at least 20 minutes between rounds, and never fall asleep with it on.</p>
-      <h4>Throughout</h4><p>When a thought shows up, label it softly ("thinking") and come back to your breath. If Susan takes longer to fall asleep, the times after it shift on their own.</p>
-      <h4>From the old checklist</h4><p>Susan's pill, thermostat, diffuser, grooming, putting the leash up and snacks away and the evening practice now live here instead of on the Daily checklist.</p>
-      <h4>Bath night</h4><p>The bath only adds about 12 minutes, because the 25-minute bath block absorbs planning, the card, Time with God and slow breathing. For a 30-minute soak, settle in for 10 minutes; lights out moves about 5 minutes later.</p>
-    </details>`;
-  document.getElementById('bedView').innerHTML = html;
-  ['routineView', 'trackingView', 'projectsView', 'workoutsView', 'cashView'].forEach(id => document.getElementById(id).classList.add('hidden'));
-  document.getElementById('bedView').classList.remove('hidden');
+  html += `<details class="card cash-guide"><summary><strong>Rules and tips</strong></summary>${cfg.tips}</details>`;
+  document.getElementById(cfg.view).innerHTML = html;
+  ['routineView', 'trackingView', 'projectsView', 'workoutsView', 'cashView', 'morningView', 'bedView'].forEach(id => document.getElementById(id).classList.toggle('hidden', id !== cfg.view));
 }
 
-// Keep the cold pack timer current without re-rendering the whole view.
+// Keep the Hot/Cold pack banner current without re-rendering the whole view.
 setInterval(() => {
-  if (state.view !== 'bed') return;
-  const el = document.getElementById('bedPack');
-  if (el) { const v = bedRead(cashDate()); el.innerHTML = bedPackStatus(v.mode, v.done); }
+  const kind = state.view === 'bed' ? 'bed' : state.view === 'morning' ? 'am' : null;
+  if (!kind) return;
+  const el = document.getElementById(`packStatus_${kind}`);
+  if (el) { const v = schedRead(kind, cashDate()); el.innerHTML = packStatus(kind, v.mode, v.done); }
 }, 30000);
 
-function bedTrackingCard(date, weekStart, monthStart, yearStart, daysInMonth, daysInYear) {
-  const night = dt => bedRead(dt).done.lights_out ? 1 : 0;
-  const bath = dt => { const v = bedRead(dt); return v.mode === 'bath' && v.done.lights_out ? 1 : 0; };
+function schedTrackingCard(kind, date, weekStart, monthStart, yearStart, daysInMonth, daysInYear) {
+  const cfg = SCHEDS[kind];
+  const label = kind === 'am' ? 'morning' : 'night';
   const row = (name, f) => `<div style="font-size:16px;margin-bottom:10px;padding:8px;background:#f0f0f0;border-radius:4px;"><strong>${name}</strong><br>Weekly: ${sumOverRange(f, weekStart, date)}/7 | Monthly: ${sumOverRange(f, monthStart, date)}/${daysInMonth} | Annual: ${sumOverRange(f, yearStart, date)}/${daysInYear}</div>`;
-  const outs = [];
-  sumOverRange(dt => { const ts = bedRead(dt).done.lights_out; const m = ts ? bedMinsOf(ts, dt) : null; if (m !== null) outs.push(m); return 0; }, weekStart, date);
-  const avg = outs.length ? bedClock(outs.reduce((a, b) => a + b, 0) / outs.length) : 'none yet';
-  const v = bedRead(date);
-  const flat = bedFlat(v.mode);
+  const finished = dt => schedRead(kind, dt).done[cfg.finish] ? 1 : 0;
+  const bath = dt => { const v = schedRead(kind, dt); return v.mode === 'bath' && v.done[cfg.finish] ? 1 : 0; };
+  const marks = [];
+  sumOverRange(dt => { const ts = schedRead(kind, dt).done[cfg.anchor]; const m = ts ? bedMinsOf(ts, dt) : null; if (m !== null) marks.push(m); return 0; }, weekStart, date);
+  const avg = marks.length ? bedClock(marks.reduce((a, b) => a + b, 0) / marks.length) : 'none yet';
+  const v = schedRead(kind, date);
+  const flat = schedFlat(kind, v.mode);
   return `
     <div class="card">
-      <h3>Bed schedule</h3>
-      <p style="font-size:14px;color:#555;margin-bottom:8px;">Tonight: ${flat.filter(s => v.done[s.id]).length} of ${flat.length} steps (${v.mode === 'bath' ? 'bath night' : 'regular night'}). Average lights out this week: ${avg}.</p>
-      ${row('Nights finished (lights out checked)', night)}
-      ${row('Bath nights', bath)}
-      ${row('Liquids stopped by 5:30', dt => bedRead(dt).done.pre_liquids ? 1 : 0)}
-      ${row('Food done by 6:30', dt => bedRead(dt).done.pre_food ? 1 : 0)}
+      <h3>${cfg.title}</h3>
+      <p style="font-size:14px;color:#555;margin-bottom:8px;">Today: ${flat.filter(s => v.done[s.id]).length} of ${flat.length} steps (${v.mode === 'bath' ? 'bath ' + label : 'regular ' + label}). Average ${cfg.anchorLabel} this week: ${avg}.</p>
+      ${row(`${label[0].toUpperCase() + label.slice(1)}s finished`, finished)}
+      ${row(`Bath ${label}s`, bath)}
+      ${cfg.pre.map(p => row(p.t, dt => schedRead(kind, dt).done[p.id] ? 1 : 0)).join('')}
     </div>`;
 }
 
