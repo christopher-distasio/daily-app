@@ -1152,7 +1152,7 @@ function render() {
 }
 
 function renderRoutine() {
-  let html = '';
+  let html = verseOfDayCard();
   const verse = state.verses[state.verseIndex];
   
   if (verse) {
@@ -2056,7 +2056,7 @@ function renderSched(kind) {
     </tr>`;
   });
   const th = 'padding:6px;border:1px solid #ddd;text-align:left;font-size:13px;';
-  let html = `
+  let html = (kind === 'am' ? verseOfDayCard() : '') + `
     <h2>${cfg.title}</h2>
     <div class="grid-2" style="margin-bottom:10px;">${cfg.modes.map(btn).join('')}</div>
     <div class="card card-blue" style="position:sticky;top:0;z-index:5;">
@@ -2118,6 +2118,130 @@ function schedTrackingCard(kind, date, weekStart, monthStart, yearStart, daysInM
       ...count(dt => schedRead(kind, dt).done[s.id] ? 1 : 0)])
   ];
   return totalsTable(cfg.title, rows, `Average ${cfg.anchorLabel} this week: ${avg}. Today's column shows the time each step was checked, and you can change it.`);
+}
+
+
+// ---- Verse for today ----
+// One KJV verse a day, tied to a part of the app. Weight = importance (1 to 3, how central
+// the passage is) × 2 for the New Testament, so core NT passages come up most. The order is
+// fixed from a start date, so every device shows the same verse on the same day.
+const VOTD_TOPICS = {
+  sleep: ['Sleep and rest', 'bed'], morning: ['Mornings', 'morning'], mind: ['Mind and thoughts', 'morning'],
+  peace: ['Peace and worry', 'bed'], suffering: ['Suffering and pain', 'morning'], prayer: ['Prayer and time with God', 'morning'],
+  intention: ['Who you are today', 'morning'], connection: ['Connection with people', 'routine'], marriage: ['Susan and marriage', 'bed'],
+  gratitude: ['Gratitude', 'bed'], work: ['Work and projects', 'projects'], body: ['Body and movement', 'workouts'],
+  routine: ['Keeping the routine', 'routine'], animals: ['Caring for Cash', 'cash'], water: ['Water and food', 'routine'],
+  hope: ['Hope and dreams', 'bed'], days: ['Counting your days', 'tracking']
+};
+// [reference, text, topic, importance, NT?, reflection]
+const VOTD = [
+  ['Matthew 11:28', 'Come unto me, all ye that labour and are heavy laden, and I will give you rest.', 'sleep', 3, 1, 'Rest is offered, not earned. Let tonight start from there.'],
+  ['Matthew 22:37-39', 'Jesus said unto him, Thou shalt love the Lord thy God with all thy heart, and with all thy soul, and with all thy mind. This is the first and great commandment. And the second is like unto it, Thou shalt love thy neighbour as thyself.', 'connection', 3, 1, 'Everything on the checklist sits under these two. Who can you love well today?'],
+  ['John 3:16', 'For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.', 'gratitude', 3, 1, 'Start your gratitude here: you were loved first.'],
+  ['John 14:27', 'Peace I leave with you, my peace I give unto you: not as the world giveth, give I unto you. Let not your heart be troubled, neither let it be afraid.', 'peace', 3, 1, 'Peace is given, so you can receive it during slow breathing instead of forcing it.'],
+  ['John 15:12', 'This is my commandment, That ye love one another, as I have loved you.', 'connection', 2, 1, 'Your five minutes of connection today is this commandment in small form.'],
+  ['John 16:33', 'These things I have spoken unto you, that in me ye might have peace. In the world ye shall have tribulation: but be of good cheer; I have overcome the world.', 'suffering', 3, 1, 'Trouble is expected, not a sign you failed. Bring this into "Why am I suffering."'],
+  ['Romans 5:3-5', 'And not only so, but we glory in tribulations also: knowing that tribulation worketh patience; And patience, experience; and experience, hope: And hope maketh not ashamed; because the love of God is shed abroad in our hearts by the Holy Ghost which is given unto us.', 'suffering', 3, 1, 'Pain can build patience, and patience builds hope. Notice one step of that today.'],
+  ['Romans 8:18', 'For I reckon that the sufferings of this present time are not worthy to be compared with the glory which shall be revealed in us.', 'suffering', 2, 1, 'Today\'s pain is real, and it is not the whole story.'],
+  ['Romans 8:28', 'And we know that all things work together for good to them that love God, to them who are the called according to his purpose.', 'hope', 3, 1, 'Even a missed routine can be worked into good. Begin again without guilt.'],
+  ['Romans 8:38-39', 'For I am persuaded, that neither death, nor life, nor angels, nor principalities, nor powers, nor things present, nor things to come, Nor height, nor depth, nor any other creature, shall be able to separate us from the love of God, which is in Christ Jesus our Lord.', 'peace', 3, 1, 'Nothing on today\'s list, done or undone, changes this.'],
+  ['Romans 12:2', 'And be not conformed to this world: but be ye transformed by the renewing of your mind, that ye may prove what is that good, and acceptable, and perfect, will of God.', 'mind', 3, 1, 'Mind training is renewing your mind, one rep at a time.'],
+  ['Romans 12:12', 'Rejoicing in hope; patient in tribulation; continuing instant in prayer;', 'prayer', 2, 1, 'Three small habits in one line: hope, patience, prayer.'],
+  ['Romans 15:13', 'Now the God of hope fill you with all joy and peace in believing, that ye may abound in hope, through the power of the Holy Ghost.', 'hope', 2, 1, 'Ask for hope tonight as you plant your question.'],
+  ['1 Corinthians 13:4-7', 'Charity suffereth long, and is kind; charity envieth not; charity vaunteth not itself, is not puffed up, Doth not behave itself unseemly, seeketh not her own, is not easily provoked, thinketh no evil; Rejoiceth not in iniquity, but rejoiceth in the truth; Beareth all things, believeth all things, hopeth all things, endureth all things.', 'marriage', 3, 1, 'Read it with Susan in mind. Pick one line to live out with her tonight.'],
+  ['1 Corinthians 6:19', 'What? know ye not that your body is the temple of the Holy Ghost which is in you, which ye have of God, and ye are not your own?', 'body', 2, 1, 'Movement, water and sleep are ways of caring for something holy.'],
+  ['1 Corinthians 10:31', 'Whether therefore ye eat, or drink, or whatsoever ye do, do all to the glory of God.', 'water', 2, 1, 'Even a glass of water can be done on purpose.'],
+  ['2 Corinthians 4:16-17', 'For which cause we faint not; but though our outward man perish, yet the inward man is renewed day by day. For our light affliction, which is but for a moment, worketh for us a far more exceeding and eternal weight of glory;', 'suffering', 3, 1, 'Your body may hurt, and your inner self can still be renewed today.'],
+  ['2 Corinthians 5:17', 'Therefore if any man be in Christ, he is a new creature: old things are passed away; behold, all things are become new.', 'intention', 3, 1, 'Declare who you are today from this, not from yesterday.'],
+  ['2 Corinthians 10:5', 'Casting down imaginations, and every high thing that exalteth itself against the knowledge of God, and bringing into captivity every thought to the obedience of Christ;', 'mind', 2, 1, 'When a thought shows up, label it and bring it back. That is this verse in practice.'],
+  ['2 Corinthians 12:9', 'And he said unto me, My grace is sufficient for thee: for my strength is made perfect in weakness. Most gladly therefore will I rather glory in my infirmities, that the power of Christ may rest upon me.', 'suffering', 3, 1, 'On a hard body day, doing less is not failing. Grace covers the gap.'],
+  ['Galatians 5:22-23', 'But the fruit of the Spirit is love, joy, peace, longsuffering, gentleness, goodness, faith, Meekness, temperance: against such there is no law.', 'intention', 3, 1, 'Pick one of these as today\'s intention, and sing it into the song.'],
+  ['Galatians 6:9', 'And let us not be weary in well doing: for in due season we shall reap, if we faint not.', 'routine', 2, 1, 'Routines pay off slowly. One checked box today still counts.'],
+  ['Ephesians 4:26', 'Be ye angry, and sin not: let not the sun go down upon your wrath:', 'marriage', 2, 1, 'Before lights out, let anything between you and Susan go.'],
+  ['Ephesians 4:32', 'And be ye kind one to another, tenderhearted, forgiving one another, even as God for Christ\'s sake hath forgiven you.', 'connection', 2, 1, 'Kindness is the whole goal of a five-minute connection.'],
+  ['Philippians 4:6-7', 'Be careful for nothing; but in every thing by prayer and supplication with thanksgiving let your requests be made known unto God. And the peace of God, which passeth all understanding, shall keep your hearts and minds through Christ Jesus.', 'peace', 3, 1, 'Turn tomorrow\'s worries into requests, then hand them over before sleep.'],
+  ['Philippians 4:8', 'Finally, brethren, whatsoever things are true, whatsoever things are honest, whatsoever things are just, whatsoever things are pure, whatsoever things are lovely, whatsoever things are of good report; if there be any virtue, and if there be any praise, think on these things.', 'mind', 3, 1, 'A checklist for your thoughts. Use it during mind training.'],
+  ['Philippians 4:11', 'Not that I speak in respect of want: for I have learned, in whatsoever state I am, therewith to be content.', 'gratitude', 2, 1, 'Contentment is learned, so practice it with one thing you have right now.'],
+  ['Philippians 4:13', 'I can do all things through Christ which strengtheneth me.', 'body', 2, 1, 'Ten minutes of movement is one of those "all things."'],
+  ['Colossians 3:23', 'And whatsoever ye do, do it heartily, as to the Lord, and not unto men;', 'work', 2, 1, 'Bring this into today\'s project time, whatever the results are.'],
+  ['1 Thessalonians 5:16-18', 'Rejoice evermore. Pray without ceasing. In every thing give thanks: for this is the will of God in Christ Jesus concerning you.', 'gratitude', 3, 1, 'Name three thanks tonight during Time with God.'],
+  ['1 Timothy 4:8', 'For bodily exercise profiteth little: but godliness is profitable unto all things, having promise of the life that now is, and of that which is to come.', 'body', 2, 1, 'Exercise helps a little. Pair it with prayer and it helps everything.'],
+  ['2 Timothy 1:7', 'For God hath not given us the spirit of fear; but of power, and of love, and of a sound mind.', 'mind', 2, 1, 'A sound mind is yours by gift. Claim it before the day starts.'],
+  ['Hebrews 12:1', 'Wherefore seeing we also are compassed about with so great a cloud of witnesses, let us lay aside every weight, and the sin which doth so easily beset us, and let us run with patience the race that is set before us,', 'routine', 2, 1, 'It is a race run with patience, at your own pace.'],
+  ['Hebrews 12:11', 'Now no chastening for the present seemeth to be joyous, but grievous: nevertheless afterward it yieldeth the peaceable fruit of righteousness unto them which are exercised thereby.', 'animals', 2, 1, 'Training Cash is like this: hard now, peaceful later. Same for you.'],
+  ['James 1:2-4', 'My brethren, count it all joy when ye fall into divers temptations; Knowing this, that the trying of your faith worketh patience. But let patience have her perfect work, that ye may be perfect and entire, wanting nothing.', 'suffering', 2, 1, 'Let patience do its slow work today.'],
+  ['James 1:19', 'Wherefore, my beloved brethren, let every man be swift to hear, slow to speak, slow to wrath:', 'connection', 2, 1, 'In today\'s connection, listen more than you talk.'],
+  ['1 Peter 5:7', 'Casting all your care upon him; for he careth for you.', 'sleep', 3, 1, 'Before lights out, hand over each care one at a time.'],
+  ['1 John 4:18', 'There is no fear in love; but perfect love casteth out fear: because fear hath torment. He that feareth is not made perfect in love.', 'peace', 2, 1, 'Where fear shows up today, answer it with love.'],
+  ['1 John 4:19', 'We love him, because he first loved us.', 'gratitude', 2, 1, 'Everything good you do today starts from being loved first.'],
+  ['Matthew 6:26', 'Behold the fowls of the air: for they sow not, neither do they reap, nor gather into barns; yet your heavenly Father feedeth them. Are ye not much better than they?', 'animals', 2, 1, 'Watch the birds while you\'re outside with your coffee.'],
+  ['Matthew 6:33-34', 'But seek ye first the kingdom of God, and his righteousness; and all these things shall be added unto you. Take therefore no thought for the morrow: for the morrow shall take thought for the things of itself. Sufficient unto the day is the evil thereof.', 'peace', 3, 1, 'Plan tomorrow, then leave it there. Tonight only has to hold tonight.'],
+  ['Matthew 18:20', 'For where two or three are gathered together in my name, there am I in the midst of them.', 'marriage', 2, 1, 'When you pray with Susan tonight, you are not two but three.'],
+  ['Mark 1:35', 'And in the morning, rising up a great while before day, he went out, and departed into a solitary place, and there prayed.', 'morning', 2, 1, 'Your time outside with coffee can be your solitary place.'],
+  ['Mark 6:31', 'And he said unto them, Come ye yourselves apart into a desert place, and rest a while: for there were many coming and going, and they had no leisure so much as to eat.', 'sleep', 2, 1, 'Even Jesus told his friends to rest. You have permission too.'],
+  ['Luke 12:6', 'Are not five sparrows sold for two farthings, and not one of them is forgotten before God?', 'animals', 1, 1, 'God sees the small creatures, Cash included.'],
+  ['John 4:14', 'But whosoever drinketh of the water that I shall give him shall never thirst; but the water that I shall give him shall be in him a well of water springing up into everlasting life.', 'water', 2, 1, 'Each glass of water today can remind you of this one.'],
+  ['Psalm 4:8', 'I will both lay me down in peace, and sleep: for thou, LORD, only makest me dwell in safety.', 'sleep', 3, 0, 'Say it slowly as you get into bed tonight.'],
+  ['Psalm 127:2', 'It is vain for you to rise up early, to sit up late, to eat the bread of sorrows: for so he giveth his beloved sleep.', 'sleep', 2, 0, 'Sleep is a gift to the beloved, which includes you.'],
+  ['Proverbs 3:24', 'When thou liest down, thou shalt not be afraid: yea, thou shalt lie down, and thy sleep shall be sweet.', 'sleep', 2, 0, 'Plant this along with tonight\'s question.'],
+  ['Psalm 23:1-3', 'The LORD is my shepherd; I shall not want. He maketh me to lie down in green pastures: he leadeth me beside the still waters. He restoreth my soul: he leadeth me in the paths of righteousness for his name\'s sake.', 'sleep', 3, 0, 'Picture still waters during the body scan.'],
+  ['Psalm 46:10', 'Be still, and know that I am God: I will be exalted among the heathen, I will be exalted in the earth.', 'prayer', 3, 0, 'Be still is the whole instruction. Breathe in for 4, out for 6.'],
+  ['Psalm 118:24', 'This is the day which the LORD hath made; we will rejoice and be glad in it.', 'morning', 2, 0, 'Say it as you get out of bed.'],
+  ['Lamentations 3:22-23', 'It is of the LORD\'S mercies that we are not consumed, because his compassions fail not. They are new every morning: great is thy faithfulness.', 'morning', 3, 0, 'Yesterday is done. This morning\'s mercy is new.'],
+  ['Psalm 5:3', 'My voice shalt thou hear in the morning, O LORD; in the morning will I direct my prayer unto thee, and will look up.', 'morning', 2, 0, 'Direct your first prayer, then look up and expect something.'],
+  ['Psalm 143:8', 'Cause me to hear thy lovingkindness in the morning; for in thee do I trust: cause me to know the way wherein I should walk; for I lift up my soul unto thee.', 'intention', 2, 0, 'Ask to know the way today, then declare who you\'ll be on it.'],
+  ['Psalm 30:5', 'For his anger endureth but a moment; in his favour is life: weeping may endure for a night, but joy cometh in the morning.', 'hope', 2, 0, 'If tonight is hard, morning is coming.'],
+  ['Proverbs 3:5-6', 'Trust in the LORD with all thine heart; and lean not unto thine own understanding. In all thy ways acknowledge him, and he shall direct thy paths.', 'intention', 3, 0, 'Make "all thy ways" today\'s intention.'],
+  ['Proverbs 16:3', 'Commit thy works unto the LORD, and thy thoughts shall be established.', 'work', 2, 0, 'Commit today\'s project work before you start the timer.'],
+  ['Proverbs 12:10', 'A righteous man regardeth the life of his beast: but the tender mercies of the wicked are cruel.', 'animals', 1, 0, 'Caring for Cash well is part of a righteous life.'],
+  ['Isaiah 40:31', 'But they that wait upon the LORD shall renew their strength; they shall mount up with wings as eagles; they shall run, and not be weary; and they shall walk, and not faint.', 'body', 2, 0, 'Walk today and not faint, at whatever pace you can.'],
+  ['Isaiah 26:3', 'Thou wilt keep him in perfect peace, whose mind is stayed on thee: because he trusteth in thee.', 'mind', 3, 0, 'Keep your mind stayed on one thing during mind training.'],
+  ['Psalm 34:18', 'The LORD is nigh unto them that are of a broken heart; and saveth such as be of a contrite spirit.', 'suffering', 2, 0, 'If today hurts, God is closer, not farther.'],
+  ['Psalm 139:14', 'I will praise thee; for I am fearfully and wonderfully made: marvellous are thy works; and that my soul knoweth right well.', 'body', 2, 0, 'Thank God for one part of your body during the body scan.'],
+  ['Ecclesiastes 4:9-10', 'Two are better than one; because they have a good reward for their labour. For if they fall, the one will lift up his fellow: but woe to him that is alone when he falleth; for he hath not another to help him up.', 'marriage', 2, 0, 'You and Susan lift each other. Thank her for one way she does.'],
+  ['Psalm 90:12', 'So teach us to number our days, that we may apply our hearts unto wisdom.', 'days', 2, 0, 'Tracking is numbering your days. Look at this week with kindness.'],
+  ['Micah 6:8', 'He hath shewed thee, O man, what is good; and what doth the LORD require of thee, but to do justly, and to love mercy, and to walk humbly with thy God?', 'intention', 3, 0, 'Three things for who you\'ll be today: just, merciful, humble.'],
+  ['Joshua 1:9', 'Have not I commanded thee? Be strong and of a good courage; be not afraid, neither be thou dismayed: for the LORD thy God is with thee whithersoever thou goest.', 'intention', 2, 0, 'Wherever today goes, you don\'t go alone.'],
+  ['Psalm 63:6', 'When I remember thee upon my bed, and meditate on thee in the night watches.', 'prayer', 1, 0, 'Let this be the last thought as you drift off.'],
+  ['Job 33:15-16', 'In a dream, in a vision of the night, when deep sleep falleth upon men, in slumberings upon the bed; Then he openeth the ears of men, and sealeth their instruction,', 'hope', 1, 0, 'Ask for instruction in tonight\'s dreams, then write down what comes.'],
+  ['Proverbs 17:22', 'A merry heart doeth good like a medicine: but a broken spirit drieth the bones.', 'body', 1, 0, 'Let the intention song make you glad. It is medicine.'],
+  ['Psalm 103:2-3', 'Bless the LORD, O my soul, and forget not all his benefits: Who forgiveth all thine iniquities; who healeth all thy diseases;', 'gratitude', 2, 0, 'Forget not: name one benefit from today.']
+];
+
+// Each verse appears weight times per cycle, evenly spaced, starting at its own fixed offset
+// (from a hash of its reference) so testaments and topics mix instead of bunching.
+const VOTD_ORDER = (() => {
+  const events = [];
+  VOTD.forEach((v, i) => {
+    const w = v[3] * (v[4] ? 2 : 1);
+    let h = 0;
+    for (const ch of v[0]) h = (h * 31 + ch.charCodeAt(0)) % 100003;
+    const phase = (h % 1000) / 1000;
+    for (let j = 0; j < w; j++) events.push([(j + phase) / w, i]);
+  });
+  events.sort((x, y) => x[0] - y[0]);
+  return events.map(e => e[1]);
+})();
+
+function verseForDate(date) {
+  const day = Math.round((parseDate(date) - new Date(2026, 0, 1)) / 86400000);
+  const n = VOTD_ORDER.length;
+  return VOTD[VOTD_ORDER[((day % n) + n) % n]];
+}
+
+function verseOfDayCard() {
+  const [ref, text, topic, , nt, reflection] = verseForDate(cashDate());
+  const [label, tab] = VOTD_TOPICS[topic];
+  return `<div class="verse-card" style="text-align:left;">
+    <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:12px;color:#8b7355;margin-bottom:8px;">
+      <strong style="font-size:13px;">📖 Verse for today</strong>
+      <span>${escapeHtml(label)} · ${nt ? 'New' : 'Old'} Testament</span>
+    </div>
+    <div class="verse-text" style="font-size:15px;">${escapeHtml(text)}</div>
+    <div class="verse-ref" style="font-weight:bold;margin-bottom:10px;">${escapeHtml(ref)} (KJV)</div>
+    <div style="font-size:14px;background:#fff;border-radius:6px;padding:10px;">${escapeHtml(reflection)}
+      ${tab !== state.view ? `<a onclick="setView('${tab}');window.scrollTo(0,0);" style="color:#1565c0;cursor:pointer;text-decoration:underline;white-space:nowrap;">Open ${escapeHtml(tabsConfig().find(t => t.id === tab)?.label || tab)}</a>` : ''}</div>
+  </div>`;
 }
 
 
