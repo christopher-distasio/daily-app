@@ -29,7 +29,10 @@
     .btn-info { background: #2196f3; color: #fff; }
     .btn-danger { background: #f44336; color: #fff; }
     .view-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 10px; margin-bottom: 10px; }
-    .view-tabs button { width: 100%; padding: 10px 2px; font-size: 13px; }
+    .hide-link { position: absolute; top: -9px; right: 10px; font-size: 11px; color: #1565c0; cursor: pointer; text-decoration: underline; background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 0 6px; z-index: 6; line-height: 16px; }
+    .hidden-bar { background: #eee; border: 1px dashed #bbb; border-radius: 6px; padding: 6px 10px; margin-bottom: 10px; font-size: 13px; color: #666; display: flex; justify-content: space-between; gap: 8px; }
+    .hidden-bar a { color: #1565c0; cursor: pointer; text-decoration: underline; white-space: nowrap; }
+    .view-tabs button { width: 100%; padding: 10px 2px; font-size: 12px; line-height: 1.2; }
     .view-tabs button.active { background: #333; color: #fff; }
     .view-tabs button:not(.active) { background: #999; color: #fff; }
     .card { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; }
@@ -66,30 +69,12 @@
     <h1>BEST LIFE TRACKER</h1>
     
     <div class="settings">
-      <div class="grid-2">
-        <div><label>Wake Time</label><input type="time" id="wakeTime" value="08:00" onchange="localStorage.setItem('wakeTime', this.value);"></div>
-        <div><label>Bedtime (for sleep tracking)</label><input type="time" id="bedTime" value="22:00" onchange="state.bedTime=this.value;localStorage.setItem('bedTime', this.value);saveData(document.getElementById('currentDate').value);"></div>
-      </div>
-      
-      <div style="margin-top:10px;">
+      <div>
         <label>Date</label><input type="date" id="currentDate" onchange="handleDateChange()">
       </div>
-      
-      <button onclick="submitDashboardSleep()" style="margin-top:10px;background:#4caf50;color:#fff;width:100%;padding:10px;">
-        ✓ Submit Bedtime/Wake Time for This Date
-      </button>
-      <div id="sleepSubmitStatus" style="font-size:14px;margin-top:6px;color:#4caf50;"></div>
-      
-      <div class="view-tabs">
-        <button class="active" onclick="setView('routine')">📋 Routine</button>
-        <button onclick="setView('tracking')">📊 Tracking</button>
-        <button onclick="setView('projects')">⏱️ Projects</button>
-        <button onclick="setView('workouts')">💪 Workouts</button>
-        <button onclick="setView('cash')">🐕 Cash</button>
-        <button onclick="setView('morning')">🌅 Morning</button>
-        <button onclick="setView('bed')">🌙 Bed</button>
-      </div>
-      
+
+      <div class="view-tabs" id="viewTabs"></div>
+
       <div id="syncBox" style="margin-top:10px;"></div>
 
       <div class="grid-2" style="margin-top: 10px;">
@@ -108,6 +93,23 @@
     <div id="cashView" class="hidden"></div>
     <div id="morningView" class="hidden"></div>
     <div id="bedView" class="hidden"></div>
+    <div id="deviceView" class="hidden"></div>
+
+    <details class="card" style="margin-top:20px;">
+      <summary><strong>Enter bedtime and wake time by hand</strong></summary>
+      <p style="font-size:13px;color:#555;margin:8px 0;">Usually not needed: checking "Out of bed" and "Lights out" saves these times for you.</p>
+      <div class="grid-2">
+        <div><label>Wake Time</label><input type="time" id="wakeTime" value="08:00" onchange="localStorage.setItem('wakeTime', this.value);"></div>
+        <div><label>Bedtime (the night before)</label><input type="time" id="bedTime" value="22:00" onchange="state.bedTime=this.value;localStorage.setItem('bedTime', this.value);saveData(document.getElementById('currentDate').value);"></div>
+      </div>
+      <button onclick="submitDashboardSleep()" style="margin-top:10px;background:#4caf50;color:#fff;width:100%;padding:10px;">✓ Save Bedtime/Wake Time for This Date</button>
+      <div id="sleepSubmitStatus" style="font-size:14px;margin-top:6px;color:#4caf50;"></div>
+    </details>
+
+    <details class="card" id="tabSettings">
+      <summary><strong>⚙️ Customize tabs</strong></summary>
+      <div id="tabSettingsBody" style="margin-top:8px;"></div>
+    </details>
     <button class="home-btn" onclick="goHome()" title="Home">🏠</button>
   </div>
 
@@ -798,8 +800,108 @@ function saveState() {
 
 function setView(view) {
   state.view = view;
-  document.querySelectorAll('.view-tabs button').forEach(b => b.classList.toggle('active', b.getAttribute('onclick') === `setView('${view}')`));
   render();
+}
+
+// ---- Tabs: order, names and visibility are the user's (tabsConfig) ----
+const TAB_DEFS = [
+  ['routine', '📋 Daily Checklist'], ['cash', '🐕 Cash'], ['morning', '🌅 Morning'], ['bed', '🌙 Bed'],
+  ['projects', '⏱️ Projects'], ['workouts', '💪 Workouts'], ['device', '⌚ Device'], ['tracking', '📊 Tracking']
+];
+function tabsConfig() {
+  let saved = [];
+  try { saved = JSON.parse(localStorage.getItem('tabsConfig')) || []; } catch (e) {}
+  const known = new Set(saved.map(t => t.id));
+  return [...saved.filter(t => TAB_DEFS.some(([id]) => id === t.id)), ...TAB_DEFS.filter(([id]) => !known.has(id)).map(([id, label]) => ({ id, label, hidden: false }))];
+}
+function saveTabs(list) { localStorage.setItem('tabsConfig', JSON.stringify(list)); render(); }
+function tabMove(i, dir) { const l = tabsConfig(); const j = i + dir; if (j < 0 || j >= l.length) return; [l[i], l[j]] = [l[j], l[i]]; saveTabs(l); }
+function tabRename(i, v) { const l = tabsConfig(); l[i].label = v.trim() || TAB_DEFS.find(([id]) => id === l[i].id)[1]; saveTabs(l); }
+function tabToggle(i) { const l = tabsConfig(); if (l[i].id === 'routine') return; l[i].hidden = !l[i].hidden; saveTabs(l); }
+function tabsReset() { localStorage.removeItem('tabsConfig'); render(); }
+function renderTabs() {
+  const list = tabsConfig();
+  document.getElementById('viewTabs').innerHTML = list.filter(t => !t.hidden).map(t => `<button class="${state.view === t.id ? 'active' : ''}" onclick="setView('${t.id}')">${escapeHtml(t.label)}</button>`).join('');
+  const body = document.getElementById('tabSettingsBody');
+  if (body && !body.contains(document.activeElement)) body.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:14px;">
+      ${list.map((t, i) => `<tr><td style="padding:4px;"><input type="text" value="${escapeHtml(t.label)}" onchange="tabRename(${i}, this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;"></td>
+        <td style="padding:4px;white-space:nowrap;"><button class="mini" onclick="tabMove(${i}, -1)">↑</button> <button class="mini" onclick="tabMove(${i}, 1)">↓</button></td>
+        <td style="padding:4px;">${t.id === 'routine' ? '<span style="font-size:12px;color:#888;">home</span>' : `<a class="hide-link" style="position:static;" onclick="tabToggle(${i})">${t.hidden ? 'Unhide' : 'Hide'}</a>`}</td></tr>`).join('')}
+    </table>
+    <button class="mini" onclick="tabsReset()" style="margin-top:8px;">Reset tabs</button>`;
+}
+
+// ---- Hide / Unhide for every section ----
+// Each top-level block in a view gets a Hide link. Hidden ones shrink to a bar with Unhide.
+// Keys come from the section's heading with counts removed, so they stay stable.
+function hiddenSections() { try { return JSON.parse(localStorage.getItem('hiddenSections')) || {}; } catch (e) { return {}; } }
+function toggleSection(key) {
+  const h = hiddenSections();
+  if (h[key]) delete h[key]; else h[key] = 1;
+  localStorage.setItem('hiddenSections', JSON.stringify(h));
+  render();
+}
+function sectionTitle(el) {
+  const head = el.querySelector('h2, h3, summary, strong, .verse-ref');
+  let t = (head ? head.textContent : el.textContent).replace(/\d+\s*(\/|of)\s*\d+/g, '').replace(/\s+/g, ' ').trim();
+  return t.slice(0, 50) || 'Section';
+}
+function applySectionHiding(viewEl, view) {
+  const h = hiddenSections();
+  const seen = {};
+  [...viewEl.children].forEach(el => {
+    if (/^(H2|BUTTON|SCRIPT)$/.test(el.tagName) || !el.textContent.trim()) return;
+    const title = sectionTitle(el);
+    let key = view + ':' + title;
+    seen[key] = (seen[key] || 0) + 1;
+    if (seen[key] > 1) key += '#' + seen[key];
+    const safe = escapeHtml(key);
+    if (h[key]) {
+      el.style.display = 'none';
+      el.insertAdjacentHTML('beforebegin', `<div class="hidden-bar"><span>${escapeHtml(title)} (hidden)</span><a data-key="${safe}" onclick="toggleSection(this.dataset.key)">Unhide</a></div>`);
+      return;
+    }
+    if (!el.style.position) el.style.position = 'relative';
+    const link = `<a class="hide-link" data-key="${safe}" onclick="event.preventDefault();toggleSection(this.dataset.key)">Hide</a>`;
+    if (el.tagName === 'DETAILS') { const sum = el.querySelector('summary'); if (sum) sum.insertAdjacentHTML('beforeend', link); }
+    else el.insertAdjacentHTML('afterbegin', link);
+  });
+}
+
+// ---- Device (Fitbit) ----
+// device_<date> = { sleepHours, sleepScore, steps, restingHr, activeMin }. Typed in by hand for now;
+// a Fitbit connection would fill the same fields.
+const DEVICE_FIELDS = [['sleepHours', 'Sleep (h)', 0.1], ['sleepScore', 'Sleep score', 1], ['steps', 'Steps', 1], ['restingHr', 'Resting HR', 1], ['activeMin', 'Active min', 1]];
+function deviceRead(date) { try { return JSON.parse(localStorage.getItem(`device_${date}`)) || {}; } catch (e) { return {}; } }
+function setDeviceValue(date, field, value) {
+  const d = deviceRead(date);
+  if (value === '') delete d[field]; else d[field] = parseFloat(value);
+  localStorage.setItem(`device_${date}`, JSON.stringify(d));
+  render();
+}
+function weekDates(date) {
+  const d = parseDate(getMondayOfWeek(date));
+  return Array.from({ length: 7 }, (_, i) => { const x = new Date(d); x.setDate(x.getDate() + i); return toDateStr(x); });
+}
+function deviceTable(date) {
+  const th = 'padding:6px;border:1px solid #ddd;font-size:12px;';
+  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  return `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">
+    <thead><tr style="background:#333;color:#fff;"><th style="${th}">Day</th>${DEVICE_FIELDS.map(([, l]) => `<th style="${th}">${l}</th>`).join('')}</tr></thead>
+    <tbody>${weekDates(date).map((dt, i) => { const v = deviceRead(dt); return `<tr style="background:${dt === date ? '#fff8e1' : i % 2 ? '#fff' : '#f9f9f9'};"><td style="padding:6px;border:1px solid #ddd;font-weight:bold;">${days[i]}</td>${DEVICE_FIELDS.map(([f, , step]) => `<td style="padding:4px;border:1px solid #ddd;"><input type="number" step="${step}" min="0" value="${v[f] ?? ''}" onchange="setDeviceValue('${dt}', '${f}', this.value)" style="width:64px;padding:4px;"></td>`).join('')}</tr>`; }).join('')}</tbody>
+  </table></div>`;
+}
+function renderDevice() {
+  const date = cashDate();
+  document.getElementById('deviceView').innerHTML = `
+    <h2>Device</h2>
+    <div class="card card-blue">
+      <h3 style="margin-top:0;">Fitbit</h3>
+      <p style="font-size:14px;margin-bottom:8px;">Not connected yet. Connecting needs a one-time setup with your Fitbit account; once it's done, these numbers fill in on their own. Until then, you can type them in below.</p>
+      <button disabled style="width:100%;background:#ddd;color:#777;">Connect Fitbit (coming soon)</button>
+    </div>
+    <div class="card"><h3>This week</h3>${deviceTable(date)}</div>`;
 }
 
 function goHome() {
@@ -807,10 +909,25 @@ function goHome() {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+// Completion is stored as the time it was checked (older days stored true; both count).
 function toggleStep(key) {
-  state.completed[key] = !state.completed[key];
+  if (state.completed[key]) delete state.completed[key]; else state.completed[key] = Date.now();
   const date = document.getElementById('currentDate').value;
   saveData(date);
+  render();
+}
+
+function setStepTime(key, hhmm) {
+  if (!hhmm) return;
+  const date = document.getElementById('currentDate').value;
+  state.completed[key] = tsOn(date, hhmm);
+  saveData(date);
+  render();
+}
+
+function addMovement(mins) {
+  state.stepsMinutes = Math.max(0, (state.stepsMinutes || 0) + mins);
+  saveState();
   render();
 }
 
@@ -1020,6 +1137,7 @@ function importData(e) {
 }
 
 function render() {
+  renderTabs();
   if (state.view === 'routine') renderRoutine();
   else if (state.view === 'tracking') renderTracking();
   else if (state.view === 'projects') renderProjects();
@@ -1027,9 +1145,10 @@ function render() {
   else if (state.view === 'cash') renderCash();
   else if (state.view === 'morning') renderSched('am');
   else if (state.view === 'bed') renderSched('bed');
-  if (state.view !== 'cash') document.getElementById('cashView').classList.add('hidden');
-  if (state.view !== 'bed') document.getElementById('bedView').classList.add('hidden');
-  if (state.view !== 'morning') document.getElementById('morningView').classList.add('hidden');
+  else if (state.view === 'device') renderDevice();
+  const viewId = state.view + 'View';
+  ['routineView', 'trackingView', 'projectsView', 'workoutsView', 'cashView', 'morningView', 'bedView', 'deviceView'].forEach(id => document.getElementById(id).classList.toggle('hidden', id !== viewId));
+  applySectionHiding(document.getElementById(viewId), state.view);
 }
 
 function renderRoutine() {
@@ -1083,7 +1202,7 @@ function renderRoutine() {
     html += `
       <div class="card" style="border-left:6px solid ${fixed ? '#c62828' : '#2196f3'};${allDone ? 'opacity:0.65;background:#f1f8f1;' : ''}">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
-          <div><strong style="font-size:17px;">${escapeHtml(block.time)}</strong> <span style="font-size:12px;font-weight:bold;color:${tagColor};text-transform:${fixed ? 'uppercase' : 'none'};">${escapeHtml(block.tag)}</span> <span style="font-size:12px;color:#666;">${blockDone}/${visible.length}</span></div>
+          <div><span style="font-size:12px;font-weight:bold;color:${tagColor};text-transform:${fixed ? 'uppercase' : 'capitalize'};">${escapeHtml(block.tag)}</span> <strong style="font-size:17px;">${escapeHtml(block.time)}</strong> <span style="font-size:12px;color:#666;">${blockDone}/${visible.length}</span></div>
           <div class="mini-row">
             <button class="mini" onclick="moveBlock(${bi}, -1)" title="Move time up">↑</button>
             <button class="mini" onclick="moveBlock(${bi}, 1)" title="Move time down">↓</button>
@@ -1091,22 +1210,24 @@ function renderRoutine() {
             <button class="mini" onclick="deleteBlock(${bi})" title="Delete time" style="color:#c62828;">✕</button>
           </div>
         </div>
+        <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">
+          <thead><tr style="background:#333;color:#fff;"><th style="padding:6px;border:1px solid #ddd;text-align:left;font-size:13px;">Task</th><th style="padding:6px;border:1px solid #ddd;text-align:right;font-size:13px;">Done at</th></tr></thead>
+          <tbody>
         ${visible.map(({ it, ii }) => {
-          const done = !!state.completed[it.key];
-          const bg = done ? '#e8f5e9' : (it.heat === 'on' ? '#fff3e0' : it.heat === 'off' ? '#e3f2fd' : '#fff');
-          return `<div class="step ${done ? 'done' : ''}" style="background:${bg};margin-bottom:6px;padding:10px;">
-            <div class="step-header" style="align-items:center;gap:10px;">
-              <div style="font-size:14px;${it.heat ? 'font-weight:bold;' : ''}">${it.heat === 'on' ? '🔥❄️ ' : it.heat === 'off' ? '⏸️ ' : ''}${escapeHtml(it.t)}${it.fixed ? ' <span style="color:#c62828;font-size:11px;font-weight:bold;">FIXED</span>' : ''}${it.date ? ' <span style="color:#666;font-size:11px;">this date only</span>' : ''}</div>
-              <button onclick="toggleStep('${it.key}')" style="flex-shrink:0;background:${done ? '#4caf50' : '#f0f0f0'};color:${done ? '#fff' : '#333'};">${done ? '✓' : 'Mark'}</button>
-            </div>
-            <div class="mini-row" style="margin-top:6px;">
-              <button class="mini" onclick="moveItem(${bi}, ${ii}, -1)" title="Move task up">↑</button>
-              <button class="mini" onclick="moveItem(${bi}, ${ii}, 1)" title="Move task down">↓</button>
-              <button class="mini" onclick="editItem(${bi}, ${ii})" title="Edit task">✎</button>
-              <button class="mini" onclick="deleteItem(${bi}, ${ii})" title="Delete task" style="color:#c62828;">✕</button>
-            </div>
-          </div>`;
+          const done = state.completed[it.key];
+          const bg = done ? '#e8f5e9' : (it.heat === 'on' ? '#fff3e0' : it.heat === 'off' ? '#f5f5f5' : '#fff');
+          return `<tr style="background:${bg};">
+            <td style="padding:6px;border:1px solid #ddd;font-size:14px;${it.heat ? 'font-weight:bold;' : ''}">${it.heat === 'on' ? '🔥❄️ ' : it.heat === 'off' ? '⏸️ ' : ''}${escapeHtml(it.t)}${it.fixed ? ' <span style="color:#c62828;font-size:11px;font-weight:bold;">FIXED</span>' : ''}${it.date ? ' <span style="color:#666;font-size:11px;">this date only</span>' : ''}
+              <div class="mini-row" style="margin-top:4px;">
+                <button class="mini" onclick="moveItem(${bi}, ${ii}, -1)" title="Move task up">↑</button>
+                <button class="mini" onclick="moveItem(${bi}, ${ii}, 1)" title="Move task down">↓</button>
+                <button class="mini" onclick="editItem(${bi}, ${ii})" title="Edit task">✎</button>
+                <button class="mini" onclick="deleteItem(${bi}, ${ii})" title="Delete task" style="color:#c62828;">✕</button>
+              </div></td>
+            <td style="padding:6px;border:1px solid #ddd;text-align:right;vertical-align:top;">${doneCell(done, `toggleStep('${it.key}')`, `setStepTime('${it.key}', this.value)`)}</td>
+          </tr>`;
         }).join('')}
+          </tbody></table></div>
         ${block.steps ? `<div style="margin-top:8px;"><label>Minutes done today: <input type="number" min="0" value="${state.stepsMinutes || ''}" placeholder="______" onchange="state.stepsMinutes = Math.max(0, parseInt(this.value) || 0); saveState();" style="width:90px;padding:6px;"/></label></div>` : ''}
         <div style="display:flex;gap:6px;margin-top:8px;">
           <input id="newItem_${bi}" type="text" placeholder="Add a task to ${escapeHtml(block.time)}" style="flex:1;min-width:0;padding:8px;border:1px solid #ddd;border-radius:4px;">
@@ -1135,6 +1256,18 @@ function renderRoutine() {
       </div>
       <input id="newBlockTask" type="text" placeholder="First task (optional)" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;margin-top:8px;">
       <button class="btn-success" onclick="addBlock()" style="width:100%;margin-top:10px;">+ Add Time</button>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0;">Movement</h3>
+      <p style="margin-bottom:8px;"><strong>${state.stepsMinutes || 0} of 10 min</strong> <span style="font-size:13px;color:#555;">(dog park, walking, stretching all count)</span></p>
+      <div class="progress-bar"><div class="progress-fill" style="width:${Math.min(100, (state.stepsMinutes || 0) * 10)}%"></div></div>
+      <div class="hydration-buttons">
+        <button onclick="addMovement(5)" class="btn-info">+5 min</button>
+        <button onclick="addMovement(10)" class="btn-info">+10 min</button>
+        <button onclick="addMovement(30)" class="btn-info">+30 min</button>
+        <button onclick="state.stepsMinutes=0;saveState();render();" style="background:#f0f0f0;">Reset</button>
+      </div>
     </div>
 
     <h2>Hydration</h2>
@@ -1195,6 +1328,26 @@ function sumOverRange(getterFn, startDateStr, endDateStr) {
   return total;
 }
 
+function trackingSleepCard(date) {
+  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const th = 'padding:6px;border:1px solid #ddd;font-size:13px;';
+  const rows = weekDates(date).map((dayStr, i) => {
+    const hours = state.sleepData[dayStr] || 0;
+    const t = state.sleepTimes[dayStr] || { bed: '', wake: '' };
+    return `<tr style="background:${dayStr === date ? '#fff8e1' : i % 2 ? '#fff' : '#f9f9f9'};">
+      <td style="padding:6px;border:1px solid #ddd;font-weight:bold;">${days[i]}</td>
+      <td style="padding:4px;border:1px solid #ddd;"><input type="time" value="${t.bed}" id="bed_${dayStr}" onchange="updateSleepTimes('${dayStr}', this.value, document.getElementById('wake_${dayStr}').value)" style="width:100px;padding:4px;"></td>
+      <td style="padding:4px;border:1px solid #ddd;"><input type="time" value="${t.wake}" id="wake_${dayStr}" onchange="updateSleepTimes('${dayStr}', document.getElementById('bed_${dayStr}').value, this.value)" style="width:100px;padding:4px;"></td>
+      <td style="padding:4px;border:1px solid #ddd;"><input type="number" step="0.1" min="0" value="${hours ? (+hours).toFixed(1) : ''}" onchange="updateSleepHours('${dayStr}', parseFloat(this.value) || 0)" style="width:56px;padding:4px;"></td>
+    </tr>`;
+  }).join('');
+  return `<div class="card card-orange"><h3>Sleep (this week)</h3>
+    <p style="font-size:13px;color:#555;margin-bottom:8px;">Filled in when you check "Lights out" (Bed) and "Out of bed" (Morning). Every box can be changed.</p>
+    <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">
+      <thead><tr style="background:#333;color:#fff;"><th style="${th}">Day</th><th style="${th}">Bed (night before)</th><th style="${th}">Wake</th><th style="${th}">Hours</th></tr></thead>
+      <tbody>${rows}</tbody></table></div></div>`;
+}
+
 function renderTracking() {
   const trackable = SCHEDULED_ORDER.filter(k => ROUTINE[k].trackable);
   const completed = trackable.filter(k => state.completed[k]).length;
@@ -1218,87 +1371,36 @@ function renderTracking() {
       <div class="progress-bar"><div class="progress-fill" style="width:${(completed/trackable.length)*100}%"></div></div>
     </div>
     
-    <div class="card card-orange">
-      <h3>Hydration</h3>
-      <p><label>Oz: <input type="number" value="${state.hydration}" onchange="state.hydration = Math.max(0, parseInt(this.value)); saveState(); render();" style="width:60px;padding:4px;"/> / 180 (${Math.round((state.hydration/180)*100)}%)</label></p>
-      <div class="progress-bar"><div class="progress-fill" style="width:${(state.hydration/180)*100}%"></div></div>
-      <p style="font-size:15px;margin-top:10px;color:#666;">Monthly: ${Math.round((state.hydration*dayOfMonth)/(180*daysInMonth)*100)}% | Annual: ${Math.round((state.hydration*dayOfYear)/(180*daysInYear)*100)}%</p>
-    </div>
-    
-    <div class="card card-orange">
-      <h3>Sleep (Weekly)</h3>
-      <div style="display:grid;grid-template-columns:1fr;gap:10px;">
-        ${(() => {
-          const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-          const monday = getMondayOfWeek(date);
-          const d = parseDate(monday);
-          let html = '';
-          for (let i = 0; i < 7; i++) {
-            const dayDate = new Date(d);
-            dayDate.setDate(dayDate.getDate() + i);
-            const dayStr = toDateStr(dayDate);
-            const sleepHours = state.sleepData[dayStr] || 0;
-            const times = state.sleepTimes[dayStr] || { bed: '', wake: '' };
-            html += `<div style="background:#f0f0f0;padding:8px;border-radius:4px;">
-              <strong>${days[i]}</strong> <span style="font-size:15px;">(${sleepHours.toFixed ? sleepHours.toFixed(1) : sleepHours}h)</span><br>
-              <label style="font-size:12px;">Bed (night before): <input type="time" value="${times.bed}" onchange="updateSleepTimes('${dayStr}', this.value, document.getElementById('wake_${dayStr}').value)" id="bed_${dayStr}" style="padding:4px;"/></label><br>
-              <label style="font-size:12px;">Wake: <input type="time" value="${times.wake}" onchange="updateSleepTimes('${dayStr}', document.getElementById('bed_${dayStr}').value, this.value)" id="wake_${dayStr}" style="padding:4px;"/></label><br>
-              <label style="font-size:12px;">Or type hours: <input type="number" step="0.5" value="${sleepHours}" onchange="updateSleepHours('${dayStr}', parseFloat(this.value))" style="width:50px;padding:4px;"/>h</label>
-            </div>`;
-          }
-          return html;
-        })()}
-      </div>
-      <p style="font-size:15px;margin-top:10px;color:#666;">Manually editable sleep tracking</p>
-    </div>
-    
-    <h2>Weekly/Monthly/Annual Totals</h2>
-    <div class="card">
-      <h3>Scheduled Trackables</h3>
-      ${trackable.map(k => {
-        const done = state.completed[k] ? 1 : 0;
-        const isDaily = true;
-        const weeklyTarget = isDaily ? 7 : 3;
-        const monthlyGoal = isDaily ? daysInMonth : Math.ceil(daysInMonth * 3 / 7);
-        const annualGoal = isDaily ? daysInYear : 156;
-        const weeklyCount = sumOverRange(dt => getScheduledDoneForDate(k, dt), weekStart, date);
-        const monthlyCount = sumOverRange(dt => getScheduledDoneForDate(k, dt), monthStart, date);
-        const annualCount = sumOverRange(dt => getScheduledDoneForDate(k, dt), yearStart, date);
-        const weeklyPct = Math.round(weeklyCount / weeklyTarget * 100);
-        const monthlyPct = Math.round(monthlyCount / monthlyGoal * 100);
-        const annualPct = Math.round(annualCount / annualGoal * 100);
-        return `<div style="font-size:16px;margin-bottom:10px;padding:8px;background:#f0f0f0;border-radius:4px;">
-          <strong>${escapeHtml(ROUTINE[k].name)}</strong><br>
-          <label>Today: <input type="number" value="${done}" onchange="state.completed['${k}'] = this.value > 0; saveState(); render();" style="width:40px;padding:2px;"/></label><br>
-          Weekly: ${weeklyCount}/${weeklyTarget} (${weeklyPct}%) | Monthly: ${monthlyCount}/${monthlyGoal} (${monthlyPct}%) | Annual: ${annualCount}/${annualGoal} (${annualPct}%)
-        </div>`;
-      }).join('')}
-    </div>
-    
-    <div class="card">
-      <h3>Anytime Trackables</h3>
-      ${ANYTIME_ORDER.map(k => {
-        const done = state.anytimeCompleted[k]?.done ? 1 : 0;
-        const weeklyTarget = 7;
-        const monthlyGoal = daysInMonth;
-        const annualGoal = daysInYear;
-        const weeklyCount = sumOverRange(dt => getAnytimeDoneForDate(k, dt), weekStart, date);
-        const monthlyCount = sumOverRange(dt => getAnytimeDoneForDate(k, dt), monthStart, date);
-        const annualCount = sumOverRange(dt => getAnytimeDoneForDate(k, dt), yearStart, date);
-        const weeklyPct = Math.round(weeklyCount / weeklyTarget * 100);
-        const monthlyPct = Math.round(monthlyCount / monthlyGoal * 100);
-        const annualPct = Math.round(annualCount / annualGoal * 100);
-        return `<div style="font-size:16px;margin-bottom:10px;padding:8px;background:#f0f0f0;border-radius:4px;">
-          <strong>${escapeHtml(ROUTINE[k].name)}</strong><br>
-          <label>Today: <input type="number" value="${done}" onchange="state.anytimeCompleted['${k}'] = {done: this.value > 0}; saveState(); render();" style="width:40px;padding:2px;"/></label><br>
-          Weekly: ${weeklyCount}/${weeklyTarget} (${weeklyPct}%) | Monthly: ${monthlyCount}/${monthlyGoal} (${monthlyPct}%) | Annual: ${annualCount}/${annualGoal} (${annualPct}%)
-        </div>`;
-      }).join('')}
-    </div>
+    ${trackingSleepCard(date)}
+    ${(() => {
+      const oz = dt => dt === date ? state.hydration : (parseInt(localStorage.getItem(`hydration_${dt}`)) || 0);
+      const mv = dt => dt === date ? (state.stepsMinutes || 0) : (parseInt(localStorage.getItem(`steps_${dt}`)) || 0);
+      const sum = f => [sumOverRange(f, weekStart, date), sumOverRange(f, monthStart, date), sumOverRange(f, yearStart, date)];
+      const [hw, hm, hy] = sum(oz); const [mw, mm, my] = sum(mv);
+      return totalsTable('Hydration and Movement', [
+        ['Water (oz, goal 180/day)', `<input type="number" min="0" value="${state.hydration}" onchange="state.hydration = Math.max(0, parseInt(this.value) || 0); saveState(); render();" style="width:60px;padding:4px;">`, hw, hm, hy],
+        ['Movement (min, goal 10/day)', `<input type="number" min="0" value="${state.stepsMinutes || 0}" onchange="state.stepsMinutes = Math.max(0, parseInt(this.value) || 0); saveState(); render();" style="width:60px;padding:4px;">`, mw, mm, my],
+        ['Days movement goal met', (state.stepsMinutes || 0) >= 10 ? '✓' : '', ...[weekStart, monthStart, yearStart].map(st => sumOverRange(dt => mv(dt) >= 10 ? 1 : 0, st, date))]
+      ]);
+    })()}
 
-    ${cashTrackingCard(date, weekStart, monthStart, yearStart, daysInMonth, daysInYear)}
+    <h2>Weekly/Monthly/Annual Totals</h2>
+    ${totalsTable('Daily Checklist', trackable.map(k => [escapeHtml(ROUTINE[k].name),
+      doneCell(state.completed[k], `toggleStep('${k}')`, `setStepTime('${k}', this.value)`),
+      sumOverRange(dt => getScheduledDoneForDate(k, dt), weekStart, date) + '/7',
+      sumOverRange(dt => getScheduledDoneForDate(k, dt), monthStart, date) + '/' + daysInMonth,
+      sumOverRange(dt => getScheduledDoneForDate(k, dt), yearStart, date) + '/' + daysInYear]), 'Today shows the time each task was checked. Tap it to change it.')}
+    ${totalsTable('Anytime', ANYTIME_ORDER.map(k => [escapeHtml(ROUTINE[k].name),
+      `<input type="checkbox" ${state.anytimeCompleted[k]?.done ? 'checked' : ''} onchange="state.anytimeCompleted['${k}'] = {done: this.checked}; saveState(); render();">`,
+      sumOverRange(dt => getAnytimeDoneForDate(k, dt), weekStart, date) + '/7',
+      sumOverRange(dt => getAnytimeDoneForDate(k, dt), monthStart, date) + '/' + daysInMonth,
+      sumOverRange(dt => getAnytimeDoneForDate(k, dt), yearStart, date) + '/' + daysInYear]))}
     ${schedTrackingCard('am', date, weekStart, monthStart, yearStart, daysInMonth, daysInYear)}
     ${schedTrackingCard('bed', date, weekStart, monthStart, yearStart, daysInMonth, daysInYear)}
+    ${cashTrackingCard(date, weekStart, monthStart, yearStart, daysInMonth, daysInYear)}
+    ${totalsTable('Projects (hours)', ['BNBS', 'DEV', 'CAREER', 'IREC'].map(pr => [pr, (getProjectHoursForDate(pr, date)).toFixed(1),
+      sumProjectHours(pr, weekStart, date).toFixed(1), sumProjectHours(pr, monthStart, date).toFixed(1), sumProjectHours(pr, yearStart, date).toFixed(1)]), 'Edit project time on the Projects tab.')}
+    <div class="card"><h3>Device</h3>${deviceTable(date)}</div>
 
     <div class="card">
       <h3>Workout Components (Weekly Goal: 6 each)</h3>
@@ -1622,20 +1724,14 @@ function cashGuideToggle(el) {
 }
 
 function cashTrackingCard(date, weekStart, monthStart, yearStart, daysInMonth, daysInYear) {
-  const row = (name, week, month, year) => `<div style="font-size:16px;margin-bottom:10px;padding:8px;background:#f0f0f0;border-radius:4px;"><strong>${name}</strong><br>${week} | ${month} | ${year}</div>`;
-  const items = CASH_WEEKLY_ITEMS.map(([id, label]) => {
-    const did = dt => cashRead(`cashWeekly_${dt}`, {})[id] ? 1 : 0;
-    const count = start => sumOverRange(did, start, date);
-    return row(label, `Weekly: ${count(weekStart)}/7`, `Monthly: ${count(monthStart)}/${daysInMonth}`, `Annual: ${count(yearStart)}/${daysInYear}`);
-  }).join('');
   const walked = start => sumOverRange(cashWalkMinutes, start, date);
-  return `
-    <div class="card">
-      <h3>Cash</h3>
-      <p style="font-size:14px;color:#555;margin-bottom:8px;">His daily tasks are under Scheduled Trackables above. Tick these on the Cash tab.</p>
-      ${row('Minutes walked with Cash', `Weekly: ${walked(weekStart)}`, `Monthly: ${walked(monthStart)}`, `Annual: ${walked(yearStart)}`)}
-      ${items}
-    </div>`;
+  const rows = [['Minutes walked with Cash', `<input type="number" min="0" value="${cashWalkMinutes(date) || ''}" onchange="setCashWalk(this.value)" style="width:60px;padding:4px;">`, walked(weekStart), walked(monthStart), walked(yearStart)],
+    ...CASH_WEEKLY_ITEMS.map(([id, label]) => {
+      const did = dt => cashRead(`cashWeekly_${dt}`, {})[id] ? 1 : 0;
+      const count = start => sumOverRange(did, start, date);
+      return [label, `<input type="checkbox" ${did(date) ? 'checked' : ''} onchange="toggleCashWeekly('${date}', '${id}')">`, count(weekStart) + '/7', count(monthStart) + '/' + daysInMonth, count(yearStart) + '/' + daysInYear];
+    })];
+  return totalsTable('Cash', rows, "His daily tasks are in the Daily Checklist table above.");
 }
 
 // ---- Morning and Bed schedules ----
@@ -1654,17 +1750,14 @@ const SCHEDS = {
   bed: {
     title: 'Bed Schedule', view: 'bedView', start: 20 * 60,
     modes: [['regular', '🛏️ Regular night'], ['bath', '🛁 Bath night']],
-    pre: [
-      { id: 'pre_liquids', t: 'Liquids stopped by 5:30 PM (sips only after)', time: '5:30 PM' },
-      { id: 'pre_food', t: 'Food done by 6:30 PM', time: '6:30 PM' }
-    ],
+    pre: [],
     finish: 'lights_out', anchor: 'lights_out', anchorLabel: 'lights out',
     steps: {}
   }
 };
 
 const AM_START = [
-  { id: 'out_of_bed', t: 'Out of bed (no snoozing)', min: 2, wake: true },
+  { id: 'out_of_bed', t: 'Out of bed (no snoozing)', min: 2, wake: true, anchor: true },
   { id: 'lights', t: 'Bright lights on', min: 1 },
   { id: 'pack1_on', t: 'Hot/Cold pack on, round 1.', min: 1, pack: 'on' },
   { id: 'cpap', t: 'CPAP numbers checked (AHI, leak, hours)', min: 2 },
@@ -1672,7 +1765,7 @@ const AM_START = [
   { id: 'dream', t: 'Dream work / reconnoitering', min: 5 },
   { id: 'aleve', t: 'Aleve taken', min: 1 },
   { id: 'cash_bf', t: 'Cash breakfast: bowl down 15 minutes, then pick it up (save a handful for training)', min: 2 },
-  { id: 'outside', t: 'Outside with coffee or water', min: 5 },
+  { id: 'outside', t: 'Outside with coffee or water, with 5 minutes of real human connection: message, call or comment with someone (Facebook is fine)', min: 5 },
   { id: 'pack1_off', t: 'Hot/Cold pack off (at least a 20-minute break).', min: 1, pack: 'off' },
   { id: 'seeds', t: 'Water the seeds', min: 3 }
 ];
@@ -1691,19 +1784,21 @@ SCHEDS.am.steps.regular = [
   { id: 'breath', t: 'Breath of fire and breathing exercises', min: 5 },
   { id: 'god', t: 'Time with God (5 min)', min: 5 },
   { id: 'mind', t: 'Mind control (10 min max): grounding, "Why am I suffering" meditation', min: 10 },
+  { id: 'intention', t: 'Intention + song: play one song that moves you and feel it fully while you say who you are going to be today (who, not goals).', min: 5 },
   ...AM_END
 ];
 SCHEDS.am.steps.bath = [
   ...AM_START,
   { id: 'pets', t: 'Pets treated', min: 2 },
   { group: 'Warm bath. Do these in the tub, in order.', items: [
-    { id: 'settle', t: 'Settle in.', min: 2 },
+    { id: 'settle', t: 'Settle in.', min: 1 },
     { id: 'breath', t: 'Breath of fire and breathing exercises', min: 5 },
     { id: 'god', t: 'Time with God (5 min)', min: 5 },
     { id: 'mind', t: 'Mind control (10 min max): grounding, "Why am I suffering" meditation', min: 10 },
+    { id: 'intention', t: 'Intention + song: play one song that moves you and feel it fully while you say who you are going to be today (who, not goals).', min: 5 },
     { id: 'shave', t: 'Shave.', min: 5 },
     { id: 'skincare', t: 'Skincare.', min: 4 },
-    { id: 'drain', t: 'Drain and dry off.', min: 3 }
+    { id: 'drain', t: 'Drain and dry off.', min: 2 }
   ] },
   { id: 'stretch', t: 'Stretching (your muscles are warm now)', min: 5 },
   ...AM_END
@@ -1713,14 +1808,14 @@ SCHEDS.bed.steps.regular = [
   { id: 'susan_pill', t: 'Susan has taken her pill.', min: 1 },
   { id: 'thermostat', t: 'Set the thermostat and start the diffuser.', min: 2 },
   { id: 'tv_pray', t: 'TV off. Pray with Susan.', min: 5, link: ['c_tv_off'] },
-  { id: 'cuddle', t: 'Into bed with Susan and cuddle until she falls asleep.', min: 20 },
+  { id: 'cuddle', t: 'Into bed with Susan and cuddle until she falls asleep.', min: 20, anchor: true },
   { id: 'pack1_on', t: 'Hot/Cold pack on, round 1.', min: 1, pack: 'on' },
   { id: 'teeth', t: 'Brush teeth.', min: 3 },
   { id: 'groom', t: 'Grooming and skincare.', min: 4 },
   { id: 'cpap', t: 'Check your CPAP mask and hose.', min: 2 },
   { id: 'setout', t: 'Set out tomorrow (clothes, etc.).', min: 4 },
   { id: 'recorder', t: "Put the recorder and notebook within arm's reach of the bed.", min: 1 },
-  { id: 'plan', t: 'Plan tomorrow: read your top three tasks and picture the first hour going well.', min: 2 },
+  { id: 'plan', t: 'Plan tomorrow: read your top three tasks, picture the first hour going well, and who you want to be.', min: 2 },
   { id: 'card', t: "Write tonight's incubation question on a card. Read it three times and hold one concrete image.", min: 3 },
   { id: 'audio', t: 'Queue your bedtime calm audio.', min: 2 },
   { id: 'pack1_off', t: 'Hot/Cold pack off.', min: 1, pack: 'off' },
@@ -1740,7 +1835,7 @@ SCHEDS.bed.steps.bath = [
   { id: 'susan_pill', t: 'Susan has taken her pill.', min: 1 },
   { id: 'thermostat', t: 'Set the thermostat and start the diffuser.', min: 2 },
   { id: 'tv_pray', t: 'TV off. Pray with Susan.', min: 5, link: ['c_tv_off'] },
-  { id: 'cuddle', t: 'Into bed with Susan and cuddle until she falls asleep.', min: 20 },
+  { id: 'cuddle', t: 'Into bed with Susan and cuddle until she falls asleep.', min: 20, anchor: true },
   { id: 'pack1_on', t: 'Hot/Cold pack on, round 1.', min: 1, pack: 'on' },
   { id: 'teeth', t: 'Brush teeth.', min: 3 },
   { id: 'cpap', t: 'Check your CPAP mask and hose.', min: 2 },
@@ -1751,7 +1846,7 @@ SCHEDS.bed.steps.bath = [
   { id: 'pack1_off', t: 'Hot/Cold pack off.', min: 1, pack: 'off' },
   { group: 'Warm bath block. Do these in the tub, in order.', items: [
     { id: 'settle', t: 'Settle in and let the audio play. (10 min for a 30-minute soak)', min: 5 },
-    { id: 'plan', t: 'Plan tomorrow: picture your top three tasks and the first hour going well.', min: 2 },
+    { id: 'plan', t: 'Plan tomorrow: picture your top three tasks, the first hour going well, and who you want to be.', min: 2 },
     { id: 'card_read', t: 'Read the card three times and hold the image.', min: 1 },
     { id: 'god', t: 'Time with God, including the "Why am I suffering" meditation.', min: 10 },
     { id: 'breathe', t: 'Slow breathing: in for 4, out for 6 to 8.', min: 5 },
@@ -1770,21 +1865,71 @@ SCHEDS.bed.steps.bath = [
 ];
 
 const PACK_RULES = '<h4>Hot/Cold pack</h4><p>Wrap it in a thin towel. Keep each round to 15 to 20 minutes, leave at least 20 minutes between rounds, and never fall asleep with it on.</p>';
-SCHEDS.am.tips = PACK_RULES + `
-  <h4>Bath morning</h4><p>Breathing, Time with God, mind control, shaving and skincare all happen in the tub, so a bath morning runs about 14 minutes longer and still finishes before the 9:30 dog park.</p>
+const TIMES_NOTE = '<h4>How the times work</h4><p><b>Start</b> is when a step is planned to start. <b>Done at</b> is when you checked it, and you can change it. Start times only move when you check a ⚓ step, by however early or late that was. Everything else stays put, so the list stays readable.</p>';
+SCHEDS.am.tips = TIMES_NOTE + PACK_RULES + `
+  <h4>Bath morning</h4><p>Breathing, Time with God, mind control, your intention song, shaving and skincare all happen in the tub. It still finishes before the 9:30 dog park on the Daily Checklist.</p>
   <h4>Sleep tracking</h4><p>Checking "Out of bed" saves today's wake time.</p>`;
-SCHEDS.bed.tips = PACK_RULES + `
-  <h4>Throughout</h4><p>When a thought shows up, label it softly ("thinking") and come back to your breath. If Susan takes longer to fall asleep, the times after it shift on their own.</p>
-  <h4>From the old checklist</h4><p>Susan's pill, thermostat, diffuser, grooming and putting the leash up and snacks away now live here instead of on the Daily checklist.</p>
-  <h4>Bath night</h4><p>The bath only adds about 12 minutes, because the 25-minute bath block absorbs planning, the card, Time with God and slow breathing. For a 30-minute soak, settle in for 10 minutes; lights out moves about 5 minutes later.</p>
+SCHEDS.bed.tips = TIMES_NOTE + PACK_RULES + `
+  <h4>Throughout</h4><p>When a thought shows up, label it softly ("thinking") and come back to your breath. If Susan takes longer to fall asleep, checking the ⚓ cuddle step moves the rest of the night.</p>
+  <h4>Bath night</h4><p>The bath only adds about 12 minutes, because the bath block absorbs planning, the card, Time with God and slow breathing. For a 30-minute soak, make "Settle in" 10 minutes.</p>
   <h4>Sleep tracking</h4><p>Checking "Lights out" saves tomorrow's bedtime (sleep for a date is the night before it).</p>`;
+
+// Steps are editable. The saved list lives in schedSteps_<kind> = { regular: [...], bath: [...] };
+// until the first edit, the defaults above are used. Bath-block steps carry tub: '<block name>'.
+function schedDefault(kind, mode) {
+  return SCHEDS[kind].steps[mode].flatMap(s => s.group ? s.items.map(i => ({ ...i, tub: s.group })) : [{ ...s }]);
+}
+function schedFlat(kind, mode) {
+  try { const all = JSON.parse(localStorage.getItem(`schedSteps_${kind}`)); if (all && all[mode]) return all[mode]; } catch (e) {}
+  return schedDefault(kind, mode);
+}
+function schedSaveSteps(kind, mode, list) {
+  let all = {};
+  try { all = JSON.parse(localStorage.getItem(`schedSteps_${kind}`)) || {}; } catch (e) {}
+  SCHEDS[kind].modes.forEach(([m]) => { if (!all[m]) all[m] = schedDefault(kind, m); });
+  all[mode] = list;
+  localStorage.setItem(`schedSteps_${kind}`, JSON.stringify(all));
+  render();
+}
+function schedEditStep(kind, mode, i) {
+  const list = schedFlat(kind, mode);
+  const t = prompt('Step:', list[i].t);
+  if (t === null || !t.trim()) return;
+  list[i].t = t.trim();
+  schedSaveSteps(kind, mode, list);
+}
+function schedSetMinutes(kind, mode, i, value) {
+  const list = schedFlat(kind, mode);
+  list[i].min = Math.max(0, parseInt(value) || 0);
+  schedSaveSteps(kind, mode, list);
+}
+function schedMoveStep(kind, mode, i, dir) {
+  const list = schedFlat(kind, mode);
+  const j = i + dir;
+  if (j < 0 || j >= list.length) return;
+  [list[i], list[j]] = [list[j], list[i]];
+  schedSaveSteps(kind, mode, list);
+}
+function schedDeleteStep(kind, mode, i) {
+  const list = schedFlat(kind, mode);
+  if (!confirm(`Delete "${list[i].t}"? Past check-offs stay recorded.`)) return;
+  list.splice(i, 1);
+  schedSaveSteps(kind, mode, list);
+}
+function schedAddStep(kind, mode) {
+  const t = document.getElementById(`newStep_${kind}`).value.trim();
+  if (!t) return;
+  const min = Math.max(0, parseInt(document.getElementById(`newStepMin_${kind}`).value) || 0);
+  const list = schedFlat(kind, mode);
+  list.push({ id: 's_' + Date.now().toString(36), t, min });
+  schedSaveSteps(kind, mode, list);
+}
 
 function schedRead(kind, date) {
   try { const v = JSON.parse(localStorage.getItem(`${kind}_${date}`)); if (v && v.done) return v; } catch (e) {}
   return { mode: 'regular', done: {} };
 }
 function schedWrite(kind, date, v) { localStorage.setItem(`${kind}_${date}`, JSON.stringify(v)); }
-function schedFlat(kind, mode) { return SCHEDS[kind].steps[mode].flatMap(s => s.group ? s.items : [s]); }
 function bedClock(mins) { mins = Math.round(mins); return formatClock(`${Math.floor(mins / 60) % 24}:${String(mins % 60).padStart(2, '0')}`); }
 function bedMinsOf(ts, date) {
   const d = new Date(ts);
@@ -1792,6 +1937,7 @@ function bedMinsOf(ts, date) {
   return d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60;
 }
 function hhmmOf(ts) { const d = new Date(ts); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; }
+function tsOn(date, hhmm) { const [h, m] = hhmm.split(':').map(Number); const d = parseDate(date); d.setHours(h, m, 0, 0); return d.getTime(); }
 function nextDateStr(date) { const d = parseDate(date); d.setDate(d.getDate() + 1); return toDateStr(d); }
 
 function setSchedMode(kind, mode) {
@@ -1802,36 +1948,52 @@ function setSchedMode(kind, mode) {
   render();
 }
 
+function schedAfterCheck(kind, step, date, ts) {
+  if (step.link) {
+    step.link.forEach(k => { if (ROUTINE[k]) state.completed[k] = ts || false; });
+    saveData(date);
+  }
+  if (!ts) return;
+  if (step.lights) {
+    const night = nextDateStr(date);
+    updateSleepTimes(night, hhmmOf(ts), localStorage.getItem(`sleepWake_${night}`) || '');
+  }
+  if (step.wake) updateSleepTimes(date, localStorage.getItem(`sleepBed_${date}`) || '', hhmmOf(ts));
+}
+
 function toggleSchedStep(kind, id) {
   const date = cashDate();
   const v = schedRead(kind, date);
-  const step = [...SCHEDS[kind].pre, ...schedFlat(kind, v.mode)].find(s => s.id === id);
-  const nowDone = !v.done[id];
-  if (nowDone) v.done[id] = Date.now(); else delete v.done[id];
+  const step = schedFlat(kind, v.mode).find(s => s.id === id) || { id };
+  if (v.done[id]) delete v.done[id]; else v.done[id] = Date.now();
   schedWrite(kind, date, v);
-  if (step && step.link) {
-    step.link.forEach(k => { if (ROUTINE[k]) state.completed[k] = nowDone; });
-    saveData(date);
-  }
-  if (step && nowDone && step.lights) {
-    const night = nextDateStr(date);
-    updateSleepTimes(night, hhmmOf(v.done[id]), localStorage.getItem(`sleepWake_${night}`) || '');
-  }
-  if (step && nowDone && step.wake) {
-    updateSleepTimes(date, localStorage.getItem(`sleepBed_${date}`) || '', hhmmOf(v.done[id]));
-  }
+  schedAfterCheck(kind, step, date, v.done[id]);
   render();
 }
 
-// Planned start times follow what actually happened: after each checked step, the
-// rest shifts to start from when it was checked.
+// Change a recorded time by hand.
+function setSchedDoneTime(kind, id, hhmm) {
+  if (!hhmm) return;
+  const date = cashDate();
+  const v = schedRead(kind, date);
+  v.done[id] = tsOn(date, hhmm);
+  schedWrite(kind, date, v);
+  const step = schedFlat(kind, v.mode).find(s => s.id === id) || { id };
+  schedAfterCheck(kind, step, date, v.done[id]);
+  render();
+}
+
+// Start times come from the plan. Only an anchor step (out of bed, Susan asleep) moves the
+// rest, by how far its check was from its planned finish. A check made hours off (filled in
+// later) moves nothing.
 function schedTimes(kind, mode, done, date) {
   const out = {};
   let cursor = SCHEDS[kind].start;
   schedFlat(kind, mode).forEach(s => {
     out[s.id] = cursor;
-    const at = done[s.id] ? bedMinsOf(done[s.id], date) : null;
-    cursor = at !== null ? at : cursor + s.min;
+    cursor += s.min;
+    const at = s.anchor && done[s.id] ? bedMinsOf(done[s.id], date) : null;
+    if (at !== null && Math.abs(at - cursor) <= 120) cursor = at;
   });
   return out;
 }
@@ -1841,7 +2003,7 @@ function packStatus(kind, mode, done) {
   const last = steps[steps.length - 1];
   if (!last) return '';
   const mins = Math.floor((Date.now() - done[last.id]) / 60000);
-  if (mins > 180) return '';
+  if (mins > 180 || mins < 0) return '';
   if (last.pack === 'on') {
     const color = mins >= 20 ? '#c62828' : mins >= 15 ? '#ef6c00' : '#1565c0';
     const msg = mins >= 20 ? 'Take it off now.' : mins >= 15 ? 'Time to take it off soon (15 to 20 min max).' : 'Keep it to 15 to 20 minutes.';
@@ -1851,17 +2013,12 @@ function packStatus(kind, mode, done) {
   return `<div class="card" style="border-left:6px solid ${ready ? '#2e7d32' : '#999'};"><strong>⏸️ Hot/Cold pack off for ${mins} min.</strong> ${ready ? 'OK to start the next round.' : `Next round OK in ${20 - mins} min.`}</div>`;
 }
 
-function schedStepRow(kind, s, v, times) {
-  const done = !!v.done[s.id];
-  const d = done ? new Date(v.done[s.id]) : null;
-  const when = done ? `done ${bedClock(d.getHours() * 60 + d.getMinutes())}` : (times ? bedClock(times[s.id]) : s.time);
-  const bg = done ? '#e8f5e9' : s.pack === 'on' ? '#fff3e0' : s.pack === 'off' ? '#f5f5f5' : '#fff';
-  const icon = s.pack === 'on' ? '🔥❄️ ' : s.pack === 'off' ? '⏸️ ' : s.lights ? '🌙 ' : s.wake ? '☀️ ' : '';
-  return `<div class="step ${done ? 'done' : ''}" style="background:${bg};margin-bottom:6px;padding:10px;">
-    <div class="step-header" style="align-items:center;gap:10px;">
-      <div style="font-size:14px;"><span style="font-size:12px;color:#555;font-weight:bold;">${when}${s.min ? ` · ${s.min} min` : ''}</span><br>${icon}${escapeHtml(s.t)}</div>
-      <button onclick="toggleSchedStep('${kind}', '${s.id}')" style="flex-shrink:0;background:${done ? '#4caf50' : '#f0f0f0'};color:${done ? '#fff' : '#333'};">${done ? '✓' : 'Mark'}</button>
-    </div></div>`;
+// The "Done at" cell, shared with the Daily Checklist: Mark button, or the recorded time
+// (editable) with a small ✕ to uncheck.
+function doneCell(ts, onMark, onTime) {
+  if (!ts) return `<button onclick="${onMark}" style="background:#f0f0f0;color:#333;padding:8px 10px;">Mark</button>`;
+  const val = typeof ts === 'number' ? hhmmOf(ts) : '';
+  return `<div style="display:flex;gap:4px;align-items:center;justify-content:flex-end;"><input type="time" value="${val}" onchange="${onTime}" style="width:100px;padding:4px;border-color:#4caf50;background:#e8f5e9;" title="Done at (tap to change)"><button class="mini" onclick="${onMark}" title="Uncheck">✕</button></div>`;
 }
 
 function renderSched(kind) {
@@ -1872,35 +2029,55 @@ function renderSched(kind) {
   const times = schedTimes(kind, v.mode, v.done, date);
   const doneCount = flat.filter(s => v.done[s.id]).length;
   const btn = ([m, label]) => `<button onclick="setSchedMode('${kind}', '${m}')" style="background:${v.mode === m ? '#333' : '#ddd'};color:${v.mode === m ? '#fff' : '#333'};">${label}</button>`;
+  const end = flat.length ? times[flat[flat.length - 1].id] + flat[flat.length - 1].min : cfg.start;
+  let rows = '';
+  let lastTub = null;
+  flat.forEach((s, i) => {
+    if (s.tub && s.tub !== lastTub) {
+      const block = [];
+      for (let j = i; j < flat.length && flat[j].tub === s.tub; j++) block.push(flat[j]);
+      rows += `<tr style="background:#e3f2fd;"><td colspan="4" style="padding:8px;border:1px solid #ddd;font-weight:bold;">🛁 ${escapeHtml(s.tub)} (${block.reduce((a, b) => a + b.min, 0)} min)</td></tr>`;
+    }
+    lastTub = s.tub || null;
+    const done = v.done[s.id];
+    const icon = s.pack === 'on' ? '🔥❄️ ' : s.pack === 'off' ? '⏸️ ' : s.lights ? '🌙 ' : s.wake ? '☀️ ' : '';
+    const bg = done ? '#e8f5e9' : s.pack === 'on' ? '#fff3e0' : s.tub ? '#f5fbff' : '#fff';
+    rows += `<tr style="background:${bg};">
+      <td style="padding:6px;border:1px solid #ddd;white-space:nowrap;font-weight:bold;font-size:13px;vertical-align:top;">${bedClock(times[s.id])}</td>
+      <td style="padding:6px;border:1px solid #ddd;font-size:14px;">${s.anchor ? '⚓ ' : ''}${icon}${escapeHtml(s.t)}
+        <div class="mini-row" style="margin-top:4px;">
+          <button class="mini" onclick="schedMoveStep('${kind}', '${v.mode}', ${i}, -1)" title="Move up">↑</button>
+          <button class="mini" onclick="schedMoveStep('${kind}', '${v.mode}', ${i}, 1)" title="Move down">↓</button>
+          <button class="mini" onclick="schedEditStep('${kind}', '${v.mode}', ${i})" title="Edit">✎</button>
+          <button class="mini" onclick="schedDeleteStep('${kind}', '${v.mode}', ${i})" title="Delete" style="color:#c62828;">✕</button>
+        </div></td>
+      <td style="padding:6px;border:1px solid #ddd;text-align:center;vertical-align:top;"><input type="number" min="0" value="${s.min}" onchange="schedSetMinutes('${kind}', '${v.mode}', ${i}, this.value)" style="width:48px;padding:4px;" title="Minutes"></td>
+      <td style="padding:6px;border:1px solid #ddd;text-align:right;vertical-align:top;">${doneCell(done, `toggleSchedStep('${kind}', '${s.id}')`, `setSchedDoneTime('${kind}', '${s.id}', this.value)`)}</td>
+    </tr>`;
+  });
+  const th = 'padding:6px;border:1px solid #ddd;text-align:left;font-size:13px;';
   let html = `
     <h2>${cfg.title}</h2>
     <div class="grid-2" style="margin-bottom:10px;">${cfg.modes.map(btn).join('')}</div>
     <div class="card card-blue" style="position:sticky;top:0;z-index:5;">
-      <strong>${doneCount} of ${flat.length} done</strong>
-      <div class="progress-bar"><div class="progress-fill" style="width:${(doneCount / flat.length) * 100}%"></div></div>
-      <div style="font-size:12px;color:#555;margin-top:6px;">Times shift on their own: each step starts from when you checked the one before it.</div>
+      <strong>${doneCount} of ${flat.length} done</strong> <span style="font-size:13px;color:#555;">· planned ${bedClock(cfg.start)} to ${bedClock(end)}</span>
+      <div class="progress-bar"><div class="progress-fill" style="width:${flat.length ? (doneCount / flat.length) * 100 : 0}%"></div></div>
     </div>
-    <div id="packStatus_${kind}">${packStatus(kind, v.mode, v.done)}</div>`;
-  if (cfg.pre.length) html += `
-    <div class="card" style="border-left:6px solid #8b7355;">
-      <strong style="font-size:17px;">Before 8:00 PM</strong>
-      ${cfg.pre.map(s => schedStepRow(kind, s, v, null)).join('')}
-    </div>`;
-  cfg.steps[v.mode].forEach(s => {
-    if (s.group) {
-      const n = s.items.filter(i => v.done[i.id]).length;
-      const total = s.items.reduce((a, i) => a + i.min, 0);
-      html += `<div class="card" style="border-left:6px solid #2196f3;${n === s.items.length ? 'opacity:0.65;background:#f1f8f1;' : ''}">
-        <div style="margin-bottom:8px;"><strong style="font-size:17px;">${bedClock(times[s.items[0].id])}</strong> <span style="font-size:12px;color:#555;">🛁 ${total} min · ${n}/${s.items.length}</span><br><span style="font-size:14px;">${escapeHtml(s.group)}</span></div>
-        ${s.items.map(i => schedStepRow(kind, i, v, times)).join('')}
-      </div>`;
-    } else {
-      html += `<div class="card" style="border-left:6px solid ${s.lights || s.wake ? '#c62828' : '#2196f3'};padding:8px;">${schedStepRow(kind, s, v, times)}</div>`;
-    }
-  });
-  html += `<details class="card cash-guide"><summary><strong>Rules and tips</strong></summary>${cfg.tips}</details>`;
+    <div id="packStatus_${kind}">${packStatus(kind, v.mode, v.done)}</div>
+    <div class="card" style="padding:8px;">
+      <h3 style="margin:4px 0 8px;">Steps</h3>
+      <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">
+        <thead><tr style="background:#333;color:#fff;"><th style="${th}">Start</th><th style="${th}">Step</th><th style="${th}">Min</th><th style="${th}text-align:right;">Done at</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+      <div style="display:flex;gap:6px;margin-top:8px;">
+        <input id="newStep_${kind}" type="text" placeholder="Add a step to the end" style="flex:1;min-width:0;padding:8px;border:1px solid #ddd;border-radius:4px;">
+        <input id="newStepMin_${kind}" type="number" min="0" placeholder="min" style="width:60px;padding:8px;">
+        <button class="btn-success" onclick="schedAddStep('${kind}', '${v.mode}')" style="padding:8px 12px;">+</button>
+      </div>
+    </div>
+    <details class="card cash-guide"><summary><strong>Rules and tips</strong></summary>${cfg.tips}</details>`;
   document.getElementById(cfg.view).innerHTML = html;
-  ['routineView', 'trackingView', 'projectsView', 'workoutsView', 'cashView', 'morningView', 'bedView'].forEach(id => document.getElementById(id).classList.toggle('hidden', id !== cfg.view));
 }
 
 // Keep the Hot/Cold pack banner current without re-rendering the whole view.
@@ -1911,26 +2088,38 @@ setInterval(() => {
   if (el) { const v = schedRead(kind, cashDate()); el.innerHTML = packStatus(kind, v.mode, v.done); }
 }, 30000);
 
+// ---- Shared tracking table ----
+// rows: [name, todayCellHtml, week, month, year]
+function totalsTable(title, rows, note) {
+  const th = 'padding:6px;border:1px solid #ddd;font-size:13px;';
+  const td = 'padding:6px;border:1px solid #ddd;text-align:center;font-size:14px;';
+  return `<div class="card"><h3>${title}</h3>${note ? `<p style="font-size:13px;color:#555;margin-bottom:8px;">${note}</p>` : ''}
+    <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">
+      <thead><tr style="background:#333;color:#fff;"><th style="${th}text-align:left;">Item</th><th style="${th}">Today</th><th style="${th}">Week</th><th style="${th}">Month</th><th style="${th}">Year</th></tr></thead>
+      <tbody>${rows.map((r, i) => `<tr style="background:${i % 2 ? '#fff' : '#f9f9f9'};"><td style="${td}text-align:left;">${r[0]}</td><td style="${td}">${r[1]}</td><td style="${td}">${r[2]}</td><td style="${td}">${r[3]}</td><td style="${td}">${r[4]}</td></tr>`).join('')}</tbody>
+    </table></div></div>`;
+}
+
 function schedTrackingCard(kind, date, weekStart, monthStart, yearStart, daysInMonth, daysInYear) {
   const cfg = SCHEDS[kind];
   const label = kind === 'am' ? 'morning' : 'night';
-  const row = (name, f) => `<div style="font-size:16px;margin-bottom:10px;padding:8px;background:#f0f0f0;border-radius:4px;"><strong>${name}</strong><br>Weekly: ${sumOverRange(f, weekStart, date)}/7 | Monthly: ${sumOverRange(f, monthStart, date)}/${daysInMonth} | Annual: ${sumOverRange(f, yearStart, date)}/${daysInYear}</div>`;
-  const finished = dt => schedRead(kind, dt).done[cfg.finish] ? 1 : 0;
-  const bath = dt => { const v = schedRead(kind, dt); return v.mode === 'bath' && v.done[cfg.finish] ? 1 : 0; };
+  const v = schedRead(kind, date);
+  const flat = schedFlat(kind, v.mode);
+  const finishId = flat.length ? flat[flat.length - 1].id : cfg.finish;
+  const count = f => [sumOverRange(f, weekStart, date) + '/7', sumOverRange(f, monthStart, date) + '/' + daysInMonth, sumOverRange(f, yearStart, date) + '/' + daysInYear];
   const marks = [];
   sumOverRange(dt => { const ts = schedRead(kind, dt).done[cfg.anchor]; const m = ts ? bedMinsOf(ts, dt) : null; if (m !== null) marks.push(m); return 0; }, weekStart, date);
   const avg = marks.length ? bedClock(marks.reduce((a, b) => a + b, 0) / marks.length) : 'none yet';
-  const v = schedRead(kind, date);
-  const flat = schedFlat(kind, v.mode);
-  return `
-    <div class="card">
-      <h3>${cfg.title}</h3>
-      <p style="font-size:14px;color:#555;margin-bottom:8px;">Today: ${flat.filter(s => v.done[s.id]).length} of ${flat.length} steps (${v.mode === 'bath' ? 'bath ' + label : 'regular ' + label}). Average ${cfg.anchorLabel} this week: ${avg}.</p>
-      ${row(`${label[0].toUpperCase() + label.slice(1)}s finished`, finished)}
-      ${row(`Bath ${label}s`, bath)}
-      ${cfg.pre.map(p => row(p.t, dt => schedRead(kind, dt).done[p.id] ? 1 : 0)).join('')}
-    </div>`;
+  const rows = [
+    [`<b>${label[0].toUpperCase() + label.slice(1)}s finished</b>`, v.done[finishId] ? '✓' : '', ...count(dt => schedRead(kind, dt).done[finishId] ? 1 : 0)],
+    [`<b>Bath ${label}s</b>`, v.mode === 'bath' ? '✓' : '', ...count(dt => schedRead(kind, dt).mode === 'bath' ? 1 : 0)],
+    ...flat.map(s => [escapeHtml(s.t.length > 60 ? s.t.slice(0, 57) + '...' : s.t),
+      doneCell(v.done[s.id], `toggleSchedStep('${kind}', '${s.id}')`, `setSchedDoneTime('${kind}', '${s.id}', this.value)`),
+      ...count(dt => schedRead(kind, dt).done[s.id] ? 1 : 0)])
+  ];
+  return totalsTable(cfg.title, rows, `Average ${cfg.anchorLabel} this week: ${avg}. Today's column shows the time each step was checked, and you can change it.`);
 }
+
 
 function getProjectHoursForDate(proj, dateStr) {
   const currentDate = document.getElementById('currentDate').value;
